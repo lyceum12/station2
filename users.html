@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Управление пользователями и группами</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: system-ui, 'Segoe UI', 'Inter', sans-serif;
+        }
+        body {
+            background: #f1f5f9;
+            padding: 2rem 1.5rem;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        .back-link {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            background: white;
+            padding: 0.5rem 1rem;
+            border-radius: 40px;
+            text-decoration: none;
+            color: #1e293b;
+            font-weight: 500;
+            margin-bottom: 1.5rem;
+            border: 1px solid #e2e8f0;
+        }
+        .card {
+            background: white;
+            border-radius: 32px;
+            padding: 1.8rem;
+            margin-bottom: 2rem;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+        }
+        h2 {
+            font-size: 1.5rem;
+            margin-bottom: 1rem;
+        }
+        .btn {
+            border: none;
+            padding: 0.5rem 1.2rem;
+            border-radius: 40px;
+            font-weight: 600;
+            cursor: pointer;
+            background: #e2e8f0;
+        }
+        .btn-primary {
+            background: #3b82f6;
+            color: white;
+        }
+        .btn-danger {
+            background: #fee2e2;
+            color: #b91c1c;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 1rem;
+        }
+        th, td {
+            border: 1px solid #e2e8f0;
+            padding: 0.75rem;
+            text-align: left;
+        }
+        th {
+            background: #f8fafc;
+        }
+        input, select {
+            padding: 0.4rem;
+            border: 1px solid #cbd5e1;
+            border-radius: 12px;
+            width: 100%;
+        }
+        .group-selector {
+            margin-bottom: 1rem;
+        }
+        .action-icon {
+            cursor: pointer;
+            margin: 0 4px;
+        }
+    </style>
+</head>
+<body>
+<div class="container">
+    <a href="index.html" class="back-link">← На главную</a>
+    
+    <div class="card">
+        <h2>Группы</h2>
+        <div style="margin-bottom: 1rem;">
+            <button id="addGroupBtn" class="btn">+ Добавить группу</button>
+        </div>
+        <table id="groupsTable">
+            <thead><tr><th>Название группы</th><th>Действия</th></tr></thead>
+            <tbody id="groupsTbody"></tbody>
+        </table>
+    </div>
+    
+    <div class="card">
+        <h2>Пользователи</h2>
+        <div class="group-selector">
+            <label>Группа:</label>
+            <select id="groupSelect"></select>
+            <button id="addUserBtn" class="btn" style="margin-left: 1rem;">+ Добавить пользователя</button>
+        </div>
+        <table id="usersTable">
+            <thead><tr><th>ФИО</th><th>Номер бланка</th><th>Действия</th></tr></thead>
+            <tbody id="usersTbody"></tbody>
+        </table>
+    </div>
+</div>
+
+<script>
+    let groups = [];
+    let users = [];
+    
+    function loadData() {
+        const storedGroups = localStorage.getItem("user_groups");
+        groups = storedGroups ? JSON.parse(storedGroups) : [];
+        const storedUsers = localStorage.getItem("users");
+        users = storedUsers ? JSON.parse(storedUsers) : [];
+        renderGroups();
+        renderGroupSelect();
+        renderUsers();
+    }
+    
+    function saveGroups() {
+        localStorage.setItem("user_groups", JSON.stringify(groups));
+    }
+    
+    function saveUsers() {
+        localStorage.setItem("users", JSON.stringify(users));
+    }
+    
+    function renderGroups() {
+        const tbody = document.getElementById("groupsTbody");
+        if(groups.length === 0) {
+            tbody.innerHTML = "<tr><td colspan='2'>Нет групп</td></tr>";
+        } else {
+            tbody.innerHTML = groups.map((g, idx) => `
+                <tr>
+                    <td><input type="text" class="group-name" value="${escapeHtml(g.name)}" data-idx="${idx}"></td>
+                    <td>
+                        <span class="action-icon save-group" data-idx="${idx}">💾</span>
+                        <span class="action-icon delete-group" data-idx="${idx}">🗑️</span>
+                    </td>
+                </tr>
+            `).join("");
+        }
+        // Сохранение группы
+        document.querySelectorAll(".save-group").forEach(btn => {
+            btn.addEventListener("click", (e) => {
+                const idx = parseInt(btn.getAttribute("data-idx"));
+                const newName = document.querySelector(`.group-name[data-idx="${idx}"]`).value.trim();
+                if(newName) {
+                    groups[idx].name = newName;
+                    saveGroups();
+                    renderGroups();
+                    renderGroupSelect();
+                }
+            });
+        });
+        document.querySelectorAll(".delete-group").forEach(btn => {
+            btn.addEventListener("click", (e) => {
+                if(confirm("Удалить группу? Пользователи останутся без группы")) {
+                    const idx = parseInt(btn.getAttribute("data-idx"));
+                    groups.splice(idx, 1);
+                    saveGroups();
+                    renderGroups();
+                    renderGroupSelect();
+                    renderUsers();
+                }
+            });
+        });
+    }
+    
+    function renderGroupSelect() {
+        const select = document.getElementById("groupSelect");
+        select.innerHTML = '<option value="">Все группы</option>' + groups.map(g => `<option value="${escapeHtml(g.name)}">${escapeHtml(g.name)}</option>`).join('');
+        renderUsers();
+    }
+    
+    function renderUsers() {
+        const selectedGroup = document.getElementById("groupSelect").value;
+        let filtered = users;
+        if(selectedGroup) {
+            filtered = users.filter(u => u.group === selectedGroup);
+        }
+        const tbody = document.getElementById("usersTbody");
+        if(filtered.length === 0) {
+            tbody.innerHTML = "<tr><td colspan='3'>Нет пользователей</td></tr>";
+        } else {
+            tbody.innerHTML = filtered.map((u, idx) => {
+                const originalIdx = users.findIndex(us => us.id === u.id);
+                return `
+                    <tr>
+                        <td><input type="text" class="user-name" value="${escapeHtml(u.fullName)}" data-idx="${originalIdx}"></td>
+                        <td><input type="text" class="user-reg" value="${escapeHtml(u.registrationNumber)}" data-idx="${originalIdx}"></td>
+                        <td>
+                            <span class="action-icon save-user" data-idx="${originalIdx}">💾</span>
+                            <span class="action-icon delete-user" data-idx="${originalIdx}">🗑️</span>
+                        </td>
+                    </tr>
+                `;
+            }).join("");
+        }
+        // Сохранение пользователя
+        document.querySelectorAll(".save-user").forEach(btn => {
+            btn.addEventListener("click", (e) => {
+                const idx = parseInt(btn.getAttribute("data-idx"));
+                const newName = document.querySelector(`.user-name[data-idx="${idx}"]`).value.trim();
+                const newReg = document.querySelector(`.user-reg[data-idx="${idx}"]`).value.trim();
+                if(newName && newReg) {
+                    users[idx].fullName = newName;
+                    users[idx].registrationNumber = newReg;
+                    saveUsers();
+                    renderUsers();
+                } else {
+                    alert("Заполните оба поля");
+                }
+            });
+        });
+        document.querySelectorAll(".delete-user").forEach(btn => {
+            btn.addEventListener("click", (e) => {
+                if(confirm("Удалить пользователя?")) {
+                    const idx = parseInt(btn.getAttribute("data-idx"));
+                    users.splice(idx, 1);
+                    saveUsers();
+                    renderUsers();
+                }
+            });
+        });
+    }
+    
+    document.getElementById("addGroupBtn").addEventListener("click", () => {
+        const name = prompt("Название группы");
+        if(name && name.trim()) {
+            groups.push({ name: name.trim() });
+            saveGroups();
+            renderGroups();
+            renderGroupSelect();
+        }
+    });
+    
+    document.getElementById("addUserBtn").addEventListener("click", () => {
+        const group = document.getElementById("groupSelect").value;
+        if(!group) {
+            alert("Выберите группу");
+            return;
+        }
+        const fullName = prompt("ФИО");
+        if(!fullName) return;
+        const regNumber = prompt("Номер бланка (уникальный)");
+        if(!regNumber) return;
+        if(users.some(u => u.registrationNumber === regNumber)) {
+            alert("Пользователь с таким номером бланка уже существует");
+            return;
+        }
+        users.push({
+            id: Date.now() + "_" + Math.random(),
+            fullName: fullName.trim(),
+            registrationNumber: regNumber.trim(),
+            group: group
+        });
+        saveUsers();
+        renderUsers();
+    });
+    
+    function escapeHtml(str) {
+        if(!str) return "";
+        return str.replace(/[&<>]/g, function(m) {
+            if(m === '&') return '&amp;';
+            if(m === '<') return '&lt;';
+            if(m === '>') return '&gt;';
+            return m;
+        });
+    }
+    
+    loadData();
+</script>
+</body>
+</html>

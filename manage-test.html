@@ -1,0 +1,387 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Управление тестом</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: system-ui, 'Segoe UI', 'Inter', sans-serif;
+        }
+        body {
+            background: #f1f5f9;
+            padding: 2rem 1.5rem;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        .back-link {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            background: white;
+            padding: 0.5rem 1rem;
+            border-radius: 40px;
+            text-decoration: none;
+            color: #1e293b;
+            font-weight: 500;
+            margin-bottom: 1.5rem;
+            border: 1px solid #e2e8f0;
+        }
+        .card {
+            background: white;
+            border-radius: 32px;
+            padding: 1.8rem;
+            margin-bottom: 2rem;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+        }
+        h2 {
+            font-size: 1.5rem;
+            margin-bottom: 1rem;
+        }
+        .time-control {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            flex-wrap: wrap;
+        }
+        .time-control input {
+            padding: 0.5rem 1rem;
+            font-size: 1rem;
+            width: 100px;
+            border: 1px solid #cbd5e1;
+            border-radius: 40px;
+        }
+        .btn {
+            border: none;
+            padding: 0.5rem 1.2rem;
+            border-radius: 40px;
+            font-weight: 600;
+            cursor: pointer;
+            background: #e2e8f0;
+        }
+        .btn-primary {
+            background: #3b82f6;
+            color: white;
+        }
+        .btn-danger {
+            background: #fee2e2;
+            color: #b91c1c;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 1rem;
+        }
+        th, td {
+            border: 1px solid #e2e8f0;
+            padding: 0.75rem;
+            text-align: left;
+        }
+        th {
+            background: #f8fafc;
+        }
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.5);
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+        }
+        .modal-content {
+            background: white;
+            border-radius: 32px;
+            padding: 2rem;
+            max-width: 600px;
+            width: 90%;
+            max-height: 80%;
+            overflow-y: auto;
+        }
+        .group-selector {
+            margin-bottom: 1rem;
+            display: flex;
+            gap: 1rem;
+            align-items: center;
+        }
+    </style>
+</head>
+<body>
+<div class="container">
+    <a href="questions.html" id="backLink" class="back-link">← Вернуться к вопросам</a>
+    <div class="card">
+        <h2>Настройки теста</h2>
+        <div class="time-control">
+            <label>Время на тест (минут):</label>
+            <input type="number" id="timeLimit" min="1" step="1">
+            <button id="saveTimeBtn" class="btn btn-primary">Сохранить время</button>
+        </div>
+    </div>
+
+    <div class="card">
+        <h2>Список учащихся</h2>
+        <div class="group-selector">
+            <select id="groupSelect"></select>
+            <button id="addFromGroupBtn" class="btn">Добавить выбранную группу</button>
+            <button id="addStudentBtn" class="btn">+ Добавить вручную</button>
+        </div>
+        <table id="studentsTable">
+            <thead><tr><th>ФИО</th><th>Номер бланка</th><th>Действия</th></tr></thead>
+            <tbody id="studentsTbody"></tbody>
+        </table>
+    </div>
+
+    <div class="card">
+        <h2>Результаты прохождения</h2>
+        <div id="resultsList"></div>
+    </div>
+</div>
+
+<div id="answersModal" class="modal">
+    <div class="modal-content">
+        <h3>Ответы и файлы ученика</h3>
+        <div id="modalAnswers"></div>
+        <button id="closeModalBtn" class="btn" style="margin-top:1rem;">Закрыть</button>
+    </div>
+</div>
+
+<script>
+    let currentTestId = null;
+    let currentTest = null;
+    let groups = [];
+    let allUsers = [];
+    
+    function getTests() {
+        return JSON.parse(localStorage.getItem("quiz_constructor_app") || "[]");
+    }
+    function saveTests(tests) {
+        localStorage.setItem("quiz_constructor_app", JSON.stringify(tests));
+    }
+    function loadGroupsAndUsers() {
+        groups = JSON.parse(localStorage.getItem("user_groups") || "[]");
+        allUsers = JSON.parse(localStorage.getItem("users") || "[]");
+        const select = document.getElementById("groupSelect");
+        select.innerHTML = '<option value="">Выберите группу</option>' + groups.map(g => `<option value="${escapeHtml(g.name)}">${escapeHtml(g.name)}</option>`).join('');
+    }
+    
+    function loadTest() {
+        const params = new URLSearchParams(window.location.search);
+        currentTestId = params.get("testId");
+        if(!currentTestId) {
+            alert("Тест не указан");
+            window.location.href = "index.html";
+            return;
+        }
+        const tests = getTests();
+        currentTest = tests.find(t => t.id === currentTestId);
+        if(!currentTest) {
+            alert("Тест не найден");
+            window.location.href = "index.html";
+            return;
+        }
+        document.getElementById("backLink").href = `questions.html?testId=${currentTestId}`;
+        document.getElementById("timeLimit").value = currentTest.timeLimitMinutes || 60;
+        renderStudents();
+        renderResults();
+        loadGroupsAndUsers();
+    }
+    
+    function renderStudents() {
+        const tbody = document.getElementById("studentsTbody");
+        const students = currentTest.students || [];
+        if(students.length === 0) {
+            tbody.innerHTML = "<tr><td colspan='3'>Нет добавленных учеников</td></tr>";
+        } else {
+            tbody.innerHTML = students.map((s, idx) => `
+                <tr class="student-row" data-idx="${idx}">
+                    <td><input type="text" class="student-name" value="${escapeHtml(s.fullName)}"></td>
+                    <td><input type="text" class="student-reg" value="${escapeHtml(s.registrationNumber)}"></td>
+                    <td>
+                        <span class="action-icon save-student" data-idx="${idx}">💾</span>
+                        <span class="action-icon delete-student" data-idx="${idx}">🗑️</span>
+                    </td>
+                </tr>
+            `).join("");
+        }
+        document.querySelectorAll(".save-student").forEach(btn => {
+            btn.addEventListener("click", (e) => {
+                const idx = parseInt(btn.getAttribute("data-idx"));
+                const row = btn.closest("tr");
+                const name = row.querySelector(".student-name").value.trim();
+                const reg = row.querySelector(".student-reg").value.trim();
+                if(!name || !reg) {
+                    alert("Заполните ФИО и номер бланка");
+                    return;
+                }
+                const tests = getTests();
+                const test = tests.find(t => t.id === currentTestId);
+                if(test) {
+                    if(!test.students) test.students = [];
+                    test.students[idx] = { fullName: name, registrationNumber: reg };
+                    saveTests(tests);
+                    currentTest = test;
+                    renderStudents();
+                }
+            });
+        });
+        document.querySelectorAll(".delete-student").forEach(btn => {
+            btn.addEventListener("click", (e) => {
+                if(confirm("Удалить ученика?")) {
+                    const idx = parseInt(btn.getAttribute("data-idx"));
+                    const tests = getTests();
+                    const test = tests.find(t => t.id === currentTestId);
+                    if(test && test.students) {
+                        test.students.splice(idx, 1);
+                        saveTests(tests);
+                        currentTest = test;
+                        renderStudents();
+                    }
+                }
+            });
+        });
+    }
+    
+    document.getElementById("addStudentBtn")?.addEventListener("click", () => {
+        const fullName = prompt("ФИО");
+        if(!fullName) return;
+        const regNumber = prompt("Номер бланка");
+        if(!regNumber) return;
+        const tests = getTests();
+        const test = tests.find(t => t.id === currentTestId);
+        if(test) {
+            if(!test.students) test.students = [];
+            test.students.push({ fullName: fullName.trim(), registrationNumber: regNumber.trim() });
+            saveTests(tests);
+            currentTest = test;
+            renderStudents();
+        }
+    });
+    
+    document.getElementById("addFromGroupBtn")?.addEventListener("click", () => {
+        const groupName = document.getElementById("groupSelect").value;
+        if(!groupName) {
+            alert("Выберите группу");
+            return;
+        }
+        const usersInGroup = allUsers.filter(u => u.group === groupName);
+        if(usersInGroup.length === 0) {
+            alert("В группе нет пользователей");
+            return;
+        }
+        const tests = getTests();
+        const test = tests.find(t => t.id === currentTestId);
+        if(test) {
+            if(!test.students) test.students = [];
+            for(let user of usersInGroup) {
+                if(!test.students.some(s => s.registrationNumber === user.registrationNumber)) {
+                    test.students.push({ fullName: user.fullName, registrationNumber: user.registrationNumber });
+                }
+            }
+            saveTests(tests);
+            currentTest = test;
+            renderStudents();
+            alert(`Добавлено ${usersInGroup.length} учеников из группы`);
+        }
+    });
+    
+    document.getElementById("saveTimeBtn")?.addEventListener("click", () => {
+        const newTime = parseInt(document.getElementById("timeLimit").value);
+        if(isNaN(newTime) || newTime < 1) {
+            alert("Введите корректное время");
+            return;
+        }
+        const tests = getTests();
+        const test = tests.find(t => t.id === currentTestId);
+        if(test) {
+            test.timeLimitMinutes = newTime;
+            saveTests(tests);
+            currentTest = test;
+            alert("Время сохранено");
+        }
+    });
+    
+    function renderResults() {
+        const container = document.getElementById("resultsList");
+        const results = currentTest.results || [];
+        if(results.length === 0) {
+            container.innerHTML = "<p>Нет завершённых попыток.</p>";
+            return;
+        }
+        container.innerHTML = `
+            <table>
+                <thead><tr><th>Ученик</th><th>Номер бланка</th><th>Дата завершения</th><th>Действия</th></tr></thead>
+                <tbody>
+                    ${results.map((r, idx) => `
+                        <tr>
+                            <td>${escapeHtml(r.studentName)}</td>
+                            <td>${escapeHtml(r.studentRegNumber)}</td>
+                            <td>${new Date(r.finishedAt).toLocaleString()}</td>
+                            <td><button class="btn view-result" data-idx="${idx}">Просмотреть</button></td>
+                        </tr>
+                    `).join('')}
+                </tbody>
+            </table>
+        `;
+        document.querySelectorAll(".view-result").forEach(btn => {
+            btn.addEventListener("click", (e) => {
+                const idx = parseInt(btn.getAttribute("data-idx"));
+                const result = results[idx];
+                showResultDetails(result);
+            });
+        });
+    }
+    
+    function showResultDetails(result) {
+        const modal = document.getElementById("answersModal");
+        const container = document.getElementById("modalAnswers");
+        const answers = result.answers || [];
+        let html = `<p><strong>Ученик:</strong> ${escapeHtml(result.studentName)}</p>`;
+        html += `<p><strong>Номер бланка:</strong> ${escapeHtml(result.studentRegNumber)}</p>`;
+        html += `<p><strong>Завершён:</strong> ${new Date(result.finishedAt).toLocaleString()}</p><hr>`;
+        answers.forEach((ans, i) => {
+            const question = currentTest.questions?.find(q => q.id === ans.questionId);
+            const qTitle = question ? question.titleQuestion : "Вопрос " + (i+1);
+            html += `<div style="margin-bottom:1rem; border-bottom:1px solid #ccc; padding-bottom:0.5rem;">
+                        <strong>${escapeHtml(qTitle)}</strong><br>
+                        Ответ: ${escapeHtml(ans.answerText || "(не введён)")}<br>`;
+            if(ans.files && ans.files.length) {
+                html += `<div>Файлы: `;
+                ans.files.forEach((f, fi) => {
+                    html += `<a href="${f.dataURL}" download="${f.name}" target="_blank">${escapeHtml(f.name)}</a> `;
+                });
+                html += `</div>`;
+            } else {
+                html += `<div>Файлы не прикреплены</div>`;
+            }
+            html += `</div>`;
+        });
+        container.innerHTML = html;
+        modal.style.display = "flex";
+    }
+    
+    document.getElementById("closeModalBtn")?.addEventListener("click", () => {
+        document.getElementById("answersModal").style.display = "none";
+    });
+    
+    function escapeHtml(str) {
+        if(!str) return "";
+        return str.replace(/[&<>]/g, function(m) {
+            if(m === '&') return '&amp;';
+            if(m === '<') return '&lt;';
+            if(m === '>') return '&gt;';
+            return m;
+        });
+    }
+    
+    loadTest();
+</script>
+</body>
+</html>
