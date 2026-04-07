@@ -1,0 +1,724 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Станция КОГЭ 2025 - Информатика</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            user-select: none;
+        }
+        body {
+            background: #FFFFFF;
+            font-family: 'Inter', 'Arial', sans-serif;
+            overflow: hidden;
+            height: 100vh;
+            width: 100vw;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        .app-window {
+            width: 100%;
+            height: 100%;
+            max-width: 1280px;
+            max-height: 900px;
+            min-width: 900px;
+            min-height: 700px;
+            background: #FFFFFF;
+            position: relative;
+            box-shadow: 0 0 20px rgba(0,0,0,0.1);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+        .top-bar {
+            background: #1E325A;
+            height: 61px;
+            width: 100%;
+            position: relative;
+            display: flex;
+            align-items: center;
+            padding: 0 16px 0 16px;
+            gap: 12px;
+        }
+        .kim-info {
+            font-family: 'Inter', sans-serif;
+            font-size: 20px;
+            font-weight: 400;
+            color: #FFFFFF;
+            letter-spacing: 0.5px;
+        }
+        .timer-box {
+            background: #1E325A;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .timer-icon {
+            background: #FFFFFF;
+            border-radius: 20px;
+            width: 32px;
+            height: 32px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            color: #087475;
+        }
+        .timer {
+            font-family: 'Inter', monospace;
+            font-weight: 800;
+            font-size: 24px;
+            color: #087475;
+            background: #FFFFFF;
+            padding: 4px 12px;
+            border-radius: 28px;
+            letter-spacing: 1px;
+        }
+        .top-actions {
+            display: flex;
+            gap: 12px;
+            margin-left: auto;
+        }
+        .top-icon-btn {
+            background: transparent;
+            border: none;
+            font-size: 20px;
+            color: white;
+            cursor: pointer;
+            width: 28px;
+            height: 28px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 6px;
+            transition: 0.2s;
+        }
+        .top-icon-btn:hover { background: #2c4a7a; }
+        .stats-panel {
+            background: #e7edf9;
+            padding: 5px 20px;
+            display: flex;
+            align-items: baseline;
+            gap: 8px;
+            border-bottom: 1px solid #E2E8F0;
+            position: relative;
+        }
+        .stats-label {
+            font-family: 'Inter', sans-serif;
+            font-size: 16px;
+            font-weight: 500;
+            color: #000000;
+        }
+        .stats-count {
+            font-family: 'Inter', sans-serif;
+            font-size: 24px;
+            font-weight: 800;
+            color: #000000;
+        }
+        .questions-nav {
+            position: absolute;
+            left: 50%;
+            transform: translateX(-50%);
+            top: -12px;
+            z-index: 25;
+            display: flex;
+            background: #F8FAFC;
+            padding: 5px 5px;
+            border-bottom: 1px solid #CBD5E1;
+            overflow-x: auto;
+            white-space: nowrap;
+            scrollbar-width: thin;
+        }
+        .buttons-wrapper {
+            display: inline-flex;
+            gap: 8px;
+            align-items: center;
+        }
+        .q-btn {
+            font-family: 'Inter', 'Arial', sans-serif;
+            font-weight: 700;
+            font-size: 14px;
+            width: 42px;
+            height: 24px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: 0.1s linear;
+            background: #F0F0F0;
+            color: #1E325A;
+            box-shadow: 0 1px 2px rgba(0,0,0,0.1);
+        }
+        .q-btn.answered {
+            background: #C0C0C0;
+            color: #1E325A;
+        }
+        .q-btn.current {
+            background: #FFD7CC;
+            color: #000000;
+            box-shadow: 0 0 0 2px #FF8A5C;
+        }
+        .content-area {
+            flex: 1;
+            background: #FFFFFF;
+            padding: 16px 20px;
+            overflow-y: auto;
+            position: relative;
+            border-bottom: 1px solid #D7DDD9;
+        }
+        .question-html {
+            font-family: 'Segoe UI', 'Arial', sans-serif;
+            font-size: 1rem;
+            line-height: 1.5;
+            transition: all 0.2s ease;
+        }
+        .question-html img {
+            max-width: 100%;
+        }
+        .file-bar {
+            background: #1E325A;
+            padding: 0px 20px;
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            min-height: 48px;
+        }
+        .file-btn-group {
+            display: flex;
+            gap: 28px;
+            align-items: center;
+            padding: 0px 12px;
+        }
+        .file-action-btn {
+            font-family: 'Inter', sans-serif;
+            font-weight: 600;
+            font-size: 13px;
+            line-height: 13px;   
+            background: #F0F0F0;
+            border: none;
+            padding: 6px 8px;
+            cursor: pointer;
+            transition: 0.1s linear;
+            align-items: center;
+        }
+        .answer-area {
+            background: #FFFFFF;
+            padding: 12px 20px 20px 20px;
+            border-top: 1px solid #D7DDD9;
+            position: relative;
+        }
+        .answer-textbox {
+            width: 100%;
+            min-height: 120px;
+            padding: 16px;
+            font-family: 'Helvetica', 'Arial', sans-serif;
+            font-size: 20px;
+            border: 1px solid #aaa;
+            border-radius: 12px;
+            resize: vertical;
+            background: #ffffff;
+            color: #000716;
+            outline: none;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.05);
+        }
+        .answer-textbox:focus {
+            border-color: #1E325A;
+        }
+        .login-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.8);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 2000;
+        }
+        .login-card {
+            background: white;
+            border-radius: 32px;
+            padding: 2rem;
+            width: 400px;
+            text-align: center;
+        }
+        .login-card input {
+            width: 100%;
+            padding: 0.8rem;
+            margin: 1rem 0;
+            border: 1px solid #ccc;
+            border-radius: 40px;
+            font-size: 1rem;
+        }
+        .error-msg {
+            color: red;
+            font-size: 0.8rem;
+        }
+        .file-list {
+            margin-top: 8px;
+            font-size: 0.8rem;
+        }
+        .file-item {
+            background: #f1f5f9;
+            border-radius: 20px;
+            padding: 4px 8px;
+            margin: 4px 0;
+            display: inline-block;
+            margin-right: 8px;
+        }
+    </style>
+</head>
+<body>
+<div class="app-window" id="appWindow">
+    <!-- динамическое содержимое будет заменяться, но структура остаётся -->
+</div>
+
+<script>
+    // Глобальные переменные
+    let currentSession = null;      // сессия ученика
+    let currentTestObj = null;      // объект теста
+    let questionsOrder = [];         // упорядоченные ID вопросов
+    let currentQuestionIndex = 0;
+    let timerInterval = null;
+    let endTimestamp = null;
+
+    // DOM элементы (будут созданы после входа)
+    let timerDisplaySpan, answerCounterSpan, questionsNavDiv, questionContentDiv, answerTextarea, fileBarDiv;
+
+    // Инициализация страницы
+    function init() {
+        // Проверяем, есть ли активная сессия в localStorage
+        const savedSession = localStorage.getItem("quiz_active_session");
+        if(savedSession) {
+            try {
+                currentSession = JSON.parse(savedSession);
+                // Проверяем, не истекло ли время
+                if(currentSession.endTimestamp && currentSession.endTimestamp < Date.now()) {
+                    // время вышло, завершаем тест
+                    finishTest(true);
+                    return;
+                }
+                // Загружаем тест по testId из сессии
+                const tests = JSON.parse(localStorage.getItem("quiz_constructor_app") || "[]");
+                currentTestObj = tests.find(t => t.id === currentSession.testId);
+                if(!currentTestObj) {
+                    localStorage.removeItem("quiz_active_session");
+                    showLoginForm();
+                    return;
+                }
+                // Восстанавливаем порядок вопросов
+                questionsOrder = currentSession.questionsOrder;
+                currentQuestionIndex = currentSession.currentIndex;
+                // Запускаем интерфейс ученика
+                buildStudentUI();
+                restoreTimer();
+                restoreCurrentQuestion();
+                updateNavButtons();
+                updateAnswerCounter();
+            } catch(e) {
+                localStorage.removeItem("quiz_active_session");
+                showLoginForm();
+            }
+        } else {
+            showLoginForm();
+        }
+    }
+
+    function showLoginForm() {
+        const app = document.getElementById("appWindow");
+        app.innerHTML = `
+            <div class="login-overlay" id="loginOverlay">
+                <div class="login-card">
+                    <h2>Вход в тестирование</h2>
+                    <p>Введите номер бланка регистрации</p>
+                    <input type="text" id="regNumber" placeholder="Номер бланка (цифры)" autocomplete="off">
+                    <button id="loginBtn" class="btn" style="background:#1E325A; color:white; padding:0.6rem 2rem;">Войти</button>
+                    <div id="loginError" class="error-msg"></div>
+                </div>
+            </div>
+        `;
+        document.getElementById("loginBtn").addEventListener("click", () => {
+            const reg = document.getElementById("regNumber").value.trim();
+            if(!reg) {
+                document.getElementById("loginError").innerText = "Введите номер бланка";
+                return;
+            }
+            const tests = JSON.parse(localStorage.getItem("quiz_constructor_app") || "[]");
+            let foundTest = null;
+            let foundStudent = null;
+            for(let test of tests) {
+                const student = (test.students || []).find(s => s.registrationNumber === reg);
+                if(student) {
+                    foundTest = test;
+                    foundStudent = student;
+                    break;
+                }
+            }
+            if(!foundTest) {
+                document.getElementById("loginError").innerText = "Номер бланка не найден. Обратитесь к учителю.";
+                return;
+            }
+            // Начинаем новую сессию
+            startNewSession(foundTest, foundStudent, reg);
+        });
+    }
+
+    function startNewSession(test, student, regNumber) {
+        // Случайный порядок вопросов
+        const questions = test.questions || [];
+        const shuffled = [...questions];
+        for(let i = shuffled.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+        }
+        const questionsOrderIds = shuffled.map(q => q.id);
+        const endTime = Date.now() + (test.timeLimitMinutes || 60) * 60 * 1000;
+        
+        currentSession = {
+            testId: test.id,
+            studentRegNumber: regNumber,
+            studentName: student.fullName,
+            startTime: Date.now(),
+            endTimestamp: endTime,
+            questionsOrder: questionsOrderIds,
+            currentIndex: 0,
+            answers: {} // { questionId: { text: "", files: [] } }
+        };
+        localStorage.setItem("quiz_active_session", JSON.stringify(currentSession));
+        currentTestObj = test;
+        questionsOrder = questionsOrderIds;
+        currentQuestionIndex = 0;
+        // Инициализируем пустые ответы
+        for(let qid of questionsOrderIds) {
+            if(!currentSession.answers[qid]) {
+                currentSession.answers[qid] = { text: "", files: [] };
+            }
+        }
+        saveSession();
+        buildStudentUI();
+        restoreTimer();
+        restoreCurrentQuestion();
+        updateNavButtons();
+        updateAnswerCounter();
+    }
+
+    function buildStudentUI() {
+        const app = document.getElementById("appWindow");
+        app.innerHTML = `
+            <div class="top-bar">
+                <div class="timer-box">
+                    <div class="timer-icon">⏱️</div>
+                    <div class="timer" id="timerDisplay">--:--</div>
+                </div>
+                <div class="kim-info" id="kimLabel">${escapeHtml(currentTestObj.title)}</div>
+                <div style="margin-left: auto; display: flex; gap: 12px;">
+                    <button id="prevQBtn" style="background:#E2E8F0; border:none; padding:8px 8px; border-radius:50%;">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="#6d899f" viewBox="0 0 16 16">
+                            <path d="M16 14a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2V2a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2zm-4.5-6.5H5.707l2.147-2.146a.5.5 0 1 0-.708-.708l-3 3a.5.5 0 0 0 0 .708l3 3a.5.5 0 0 0 .708-.708L5.707 8.5H11.5a.5.5 0 0 0 0-1"/>
+                        </svg>
+                    </button>
+                    <button id="nextQBtn" style="background:#E2E8F0; border:none; padding:8px 8px; border-radius:50%;">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="#6d899f" viewBox="0 0 16 16">
+                            <path d="M0 14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V2a2 2 0 0 0-2-2H2a2 2 0 0 0-2 2zm4.5-6.5h5.793L8.146 5.354a.5.5 0 1 1 .708-.708l3 3a.5.5 0 0 1 0 .708l-3 3a.5.5 0 0 1-.708-.708L10.293 8.5H4.5a.5.5 0 0 1 0-1"/>
+                        </svg>
+                    </button>
+                </div>
+                <div class="top-actions">
+                    <button class="top-icon-btn" id="finishTestBtn" title="Завершить тест">✔️</button>
+                    <button class="top-icon-btn" id="btnMinimize" title="Свернуть">—</button>
+                    <button class="top-icon-btn" id="btnClose" title="Закрыть">✕</button>
+                </div>
+            </div>
+            <div class="stats-panel">
+                <span class="stats-label">Дано ответов:</span>
+                <span class="stats-count" id="answerCounter">0/${questionsOrder.length}</span>
+                <div class="questions-nav" id="questionsNav">
+                    <div class="buttons-wrapper" id="buttonsContainer"></div>
+                </div>
+                <div style="position: absolute;right: 90px;top: -12px;">
+                    <button id="zoomInBtn" style="background:none; border:none; cursor: pointer;">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="36" height="36" fill="currentColor" viewBox="0 0 16 16">
+                            <path fill-rule="evenodd" d="M6.5 12a5.5 5.5 0 1 0 0-11 5.5 5.5 0 0 0 0 11M13 6.5a6.5 6.5 0 1 1-13 0 6.5 6.5 0 0 1 13 0"/>
+                            <path d="M10.344 11.742q.044.06.098.115l3.85 3.85a1 1 0 0 0 1.415-1.414l-3.85-3.85a1 1 0 0 0-.115-.1 6.5 6.5 0 0 1-1.398 1.4z"/>
+                            <path fill-rule="evenodd" d="M6.5 3a.5.5 0 0 1 .5.5V6h2.5a.5.5 0 0 1 0 1H7v2.5a.5.5 0 0 1-1 0V7H3.5a.5.5 0 0 1 0-1H6V3.5a.5.5 0 0 1 .5-.5"/>
+                        </svg>
+                    </button>
+                    <button id="zoomOutBtn" style="background:none; border:none; cursor: pointer;">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="36" height="36" fill="currentColor" viewBox="0 0 16 16">
+                            <path fill-rule="evenodd" d="M6.5 12a5.5 5.5 0 1 0 0-11 5.5 5.5 0 0 0 0 11M13 6.5a6.5 6.5 0 1 1-13 0 6.5 6.5 0 0 1 13 0"/>
+                            <path d="M10.344 11.742q.044.06.098.115l3.85 3.85a1 1 0 0 0 1.415-1.414l-3.85-3.85a1 1 0 0 0-.115-.1 6.5 6.5 0 0 1-1.398 1.4z"/>
+                            <path fill-rule="evenodd" d="M3 6.5a.5.5 0 0 1 .5-.5h6a.5.5 0 0 1 0 1h-6a.5.5 0 0 1-.5-.5"/>
+                        </svg>
+                    </button>
+                </div>
+            </div>
+            <div class="content-area">
+                <div id="questionContent" class="question-html" style="font-size: 1rem;"></div>
+            </div>
+            <div class="file-bar" id="fileBar"></div>
+            <div class="answer-area">
+                <textarea id="answerInput" class="answer-textbox" placeholder="Введите ответ здесь..."></textarea>
+            </div>
+        `;
+        // Сохраняем ссылки
+        timerDisplaySpan = document.getElementById("timerDisplay");
+        answerCounterSpan = document.getElementById("answerCounter");
+        questionsNavDiv = document.getElementById("buttonsContainer");
+        questionContentDiv = document.getElementById("questionContent");
+        answerTextarea = document.getElementById("answerInput");
+        fileBarDiv = document.getElementById("fileBar");
+
+        // Кнопки
+        document.getElementById("prevQBtn").addEventListener("click", () => changeQuestion(-1));
+        document.getElementById("nextQBtn").addEventListener("click", () => changeQuestion(1));
+        document.getElementById("finishTestBtn").addEventListener("click", () => finishTest(false));
+        document.getElementById("zoomInBtn").addEventListener("click", () => changeFontSize(1));
+        document.getElementById("zoomOutBtn").addEventListener("click", () => changeFontSize(-1));
+        // Сохранение ответа при вводе
+        answerTextarea.addEventListener("input", () => {
+            saveCurrentAnswer();
+        });
+    }
+
+    function restoreTimer() {
+        if(timerInterval) clearInterval(timerInterval);
+        updateTimerDisplay();
+        timerInterval = setInterval(() => {
+            if(!currentSession) return;
+            const remaining = Math.max(0, currentSession.endTimestamp - Date.now());
+            if(remaining <= 0) {
+                clearInterval(timerInterval);
+                finishTest(true);
+            } else {
+                updateTimerDisplay();
+            }
+        }, 1000);
+    }
+
+    function updateTimerDisplay() {
+        if(!currentSession) return;
+        const remaining = Math.max(0, currentSession.endTimestamp - Date.now());
+        const minutes = Math.floor(remaining / 60000);
+        const seconds = Math.floor((remaining % 60000) / 1000);
+        timerDisplaySpan.innerText = `${minutes.toString().padStart(2,'0')}:${seconds.toString().padStart(2,'0')}`;
+    }
+
+    function restoreCurrentQuestion() {
+        const qid = questionsOrder[currentQuestionIndex];
+        const question = currentTestObj.questions.find(q => q.id === qid);
+        if(!question) return;
+        // Отображаем текст вопроса из Editor.js
+        if(question.editorData && question.editorData.blocks) {
+            // Простая конвертация blocks в HTML
+            let html = "";
+            for(let block of question.editorData.blocks) {
+                if(block.type === "paragraph") html += `<p>${block.data.text}</p>`;
+                else if(block.type === "header") html += `<h${block.data.level}>${block.data.text}</h${block.data.level}>`;
+                else if(block.type === "list") {
+                    const tag = block.data.style === "ordered" ? "ol" : "ul";
+                    html += `<${tag}>`;
+                    for(let item of block.data.items) html += `<li>${item}</li>`;
+                    html += `</${tag}>`;
+                }
+                else if(block.type === "image") html += `<img src="${block.data.file.url}" alt="${block.data.caption || ''}">`;
+                else html += `<div>${JSON.stringify(block.data)}</div>`;
+            }
+            questionContentDiv.innerHTML = html;
+        } else {
+            questionContentDiv.innerHTML = "<p>Нет содержимого вопроса</p>";
+        }
+        // Восстанавливаем ответ
+        const answerObj = currentSession.answers[qid] || { text: "", files: [] };
+        answerTextarea.value = answerObj.text;
+        // Обновляем панель файлов
+        renderFileBar(question);
+        renderFileList(question);
+    }
+
+    function renderFileBar(question) {
+        if(!fileBarDiv) return;
+        if(question.requireFileAttachment) {
+            fileBarDiv.innerHTML = `
+                <div class="file-btn-group">
+                    <button id="attachFileBtn" class="file-action-btn">📎 Прикрепить файл</button>
+                </div>
+                <div id="attachedFilesList" class="file-list"></div>
+            `;
+            document.getElementById("attachFileBtn").addEventListener("click", () => {
+                const input = document.createElement("input");
+                input.type = "file";
+                input.onchange = (e) => {
+                    const file = e.target.files[0];
+                    if(file) {
+                        const reader = new FileReader();
+                        reader.onload = (ev) => {
+                            const dataURL = ev.target.result;
+                            const qid = questionsOrder[currentQuestionIndex];
+                            const answer = currentSession.answers[qid];
+                            if(!answer.files) answer.files = [];
+                            answer.files.push({ name: file.name, type: file.type, dataURL: dataURL });
+                            saveSession();
+                            renderFileList(question);
+                        };
+                        reader.readAsDataURL(file);
+                    }
+                };
+                input.click();
+            });
+            renderFileList(question);
+        } else {
+            fileBarDiv.innerHTML = `<div style="color:white; padding:8px;">Файлы для этого вопроса не требуются</div>`;
+        }
+    }
+
+    function renderFileList(question) {
+        const container = document.getElementById("attachedFilesList");
+        if(!container) return;
+        const qid = questionsOrder[currentQuestionIndex];
+        const files = currentSession.answers[qid]?.files || [];
+        if(files.length === 0) {
+            container.innerHTML = "<span style='color:#ccc;'>Нет прикреплённых файлов</span>";
+            return;
+        }
+        container.innerHTML = files.map((f, idx) => `
+            <div class="file-item">
+                ${escapeHtml(f.name)} 
+                <button data-idx="${idx}" class="remove-file" style="background:none; border:none; cursor:pointer;">❌</button>
+            </div>
+        `).join("");
+        document.querySelectorAll(".remove-file").forEach(btn => {
+            btn.addEventListener("click", (e) => {
+                const idx = parseInt(btn.getAttribute("data-idx"));
+                const answer = currentSession.answers[qid];
+                if(answer && answer.files) {
+                    answer.files.splice(idx, 1);
+                    saveSession();
+                    renderFileList(question);
+                }
+            });
+        });
+    }
+
+    function saveCurrentAnswer() {
+        if(!currentSession) return;
+        const qid = questionsOrder[currentQuestionIndex];
+        if(!currentSession.answers[qid]) currentSession.answers[qid] = { text: "", files: [] };
+        currentSession.answers[qid].text = answerTextarea.value;
+        saveSession();
+        updateNavButtons();
+        updateAnswerCounter();
+    }
+
+    function saveSession() {
+        localStorage.setItem("quiz_active_session", JSON.stringify(currentSession));
+    }
+
+    function updateNavButtons() {
+        if(!questionsNavDiv) return;
+        const total = questionsOrder.length;
+        let html = "";
+        for(let i=0; i<total; i++) {
+            const qid = questionsOrder[i];
+            const answered = currentSession.answers[qid] && (currentSession.answers[qid].text.trim() !== "" || (currentSession.answers[qid].files && currentSession.answers[qid].files.length > 0));
+            const activeClass = (i === currentQuestionIndex) ? "current" : "";
+            const answeredClass = answered ? "answered" : "";
+            html += `<button class="q-btn ${activeClass} ${answeredClass}" data-idx="${i}">${i+1}</button>`;
+        }
+        questionsNavDiv.innerHTML = html;
+        document.querySelectorAll(".q-btn").forEach(btn => {
+            btn.addEventListener("click", (e) => {
+                const idx = parseInt(btn.getAttribute("data-idx"));
+                if(!isNaN(idx)) {
+                    saveCurrentAnswer();
+                    currentQuestionIndex = idx;
+                    restoreCurrentQuestion();
+                    updateNavButtons();
+                    updateAnswerCounter();
+                }
+            });
+        });
+    }
+
+    function updateAnswerCounter() {
+        if(!currentSession) return;
+        let answeredCount = 0;
+        for(let qid of questionsOrder) {
+            const ans = currentSession.answers[qid];
+            if(ans && (ans.text.trim() !== "" || (ans.files && ans.files.length > 0))) answeredCount++;
+        }
+        answerCounterSpan.innerText = `${answeredCount}/${questionsOrder.length}`;
+    }
+
+    function changeQuestion(delta) {
+        saveCurrentAnswer();
+        const newIndex = currentQuestionIndex + delta;
+        if(newIndex >= 0 && newIndex < questionsOrder.length) {
+            currentQuestionIndex = newIndex;
+            restoreCurrentQuestion();
+            updateNavButtons();
+            updateAnswerCounter();
+        }
+    }
+
+    function changeFontSize(delta) {
+        const currentSize = parseFloat(getComputedStyle(questionContentDiv).fontSize);
+        let newSize = currentSize + delta;
+        if(newSize < 10) newSize = 10;
+        if(newSize > 32) newSize = 32;
+        questionContentDiv.style.fontSize = newSize + "px";
+    }
+
+    function finishTest(forced) {
+        if(timerInterval) clearInterval(timerInterval);
+        // Сохраняем окончательный ответ
+        saveCurrentAnswer();
+        // Формируем результат
+        const answersArray = [];
+        for(let qid of questionsOrder) {
+            const ans = currentSession.answers[qid] || { text: "", files: [] };
+            answersArray.push({
+                questionId: qid,
+                answerText: ans.text,
+                files: ans.files
+            });
+        }
+        const result = {
+            studentRegNumber: currentSession.studentRegNumber,
+            studentName: currentSession.studentName,
+            finishedAt: Date.now(),
+            answers: answersArray
+        };
+        // Добавляем в массив результатов теста
+        const tests = JSON.parse(localStorage.getItem("quiz_constructor_app") || "[]");
+        const testIndex = tests.findIndex(t => t.id === currentSession.testId);
+        if(testIndex !== -1) {
+            if(!tests[testIndex].results) tests[testIndex].results = [];
+            tests[testIndex].results.push(result);
+            localStorage.setItem("quiz_constructor_app", JSON.stringify(tests));
+        }
+        localStorage.removeItem("quiz_active_session");
+        alert("Тест завершён! Спасибо за работу.");
+        window.location.reload(); // перезагружаем для входа заново
+    }
+
+    function escapeHtml(str) {
+        if(!str) return "";
+        return str.replace(/[&<>]/g, function(m) {
+            if(m === '&') return '&amp;';
+            if(m === '<') return '&lt;';
+            if(m === '>') return '&gt;';
+            return m;
+        });
+    }
+
+    // Запуск
+    init();
+</script>
+</body>
+</html>
