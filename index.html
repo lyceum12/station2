@@ -115,6 +115,7 @@
         <h1>Библиотека тестов</h1>
         <div>
             <button class="btn btn-outline" id="manageUsersBtn">Управление пользователями</button>
+            <button class="btn btn-outline" id="manageTasksBaseBtn">База заданий</button>
             <button class="btn btn-primary" id="createTestBtn">Создать новый тест</button>
         </div>
     </div>
@@ -150,7 +151,7 @@
             <div class="test-card" data-id="${test.id}">
                 <div class="test-info">
                     <h3>${escapeHtml(test.title)}</h3>
-                    <p>Вопросов: ${test.questions?.length || 0} | Время: ${test.timeLimitMinutes} мин</p>
+                    <p>Вопросов: ${test.questions?.length || 0} | Время: ${test.timeLimitMinutes || 60} мин</p>
                 </div>
                 <div class="test-actions">
                     <button class="btn btn-outline edit-questions-btn" data-id="${test.id}">Редактировать вопросы</button>
@@ -214,6 +215,9 @@
     
     document.getElementById("manageUsersBtn").addEventListener("click", () => {
         window.location.href = "users.html";
+    });
+    document.getElementById("manageTasksBaseBtn").addEventListener("click", () => {
+        window.location.href = "tasks-base.html";
     });
     
     loadTestsFromStorage();
