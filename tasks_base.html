@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>База заданий</title>
+    <script src="https://cdn.jsdelivr.net/npm/@editorjs/editorjs@2.31.5/dist/editorjs.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@editorjs/header@2.8.8/dist/header.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@editorjs/list@2.0.9/dist/editorjs-list.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@editorjs/paragraph@2.11.7/dist/paragraph.umd.min.js"></script>
+    <style>
+        * { margin:0; padding:0; box-sizing:border-box; font-family: system-ui, 'Segoe UI', 'Inter', sans-serif; }
+        body { background:#f1f5f9; padding:2rem 1.5rem; }
+        .container { max-width:1200px; margin:0 auto; }
+        .back-link { display:inline-flex; align-items:center; gap:6px; background:white; padding:0.5rem 1rem; border-radius:40px; text-decoration:none; color:#1e293b; font-weight:500; margin-bottom:1.5rem; border:1px solid #e2e8f0; }
+        .btn { border:none; padding:0.5rem 1.2rem; border-radius:40px; font-weight:600; cursor:pointer; background:#e2e8f0; }
+        .btn-primary { background:#3b82f6; color:white; }
+        .card { background:white; border-radius:32px; padding:1.5rem; margin-bottom:2rem; box-shadow:0 4px 12px rgba(0,0,0,0.05); }
+        .task-item { border:1px solid #e2e8f0; border-radius:24px; padding:1rem; margin-bottom:1rem; display:flex; justify-content:space-between; align-items:center; }
+        .task-info h3 { font-size:1.2rem; margin-bottom:5px; }
+        .task-actions { display:flex; gap:10px; }
+        .modal { display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); justify-content:center; align-items:center; z-index:1000; }
+        .modal-content { background:white; border-radius:32px; padding:2rem; max-width:800px; width:90%; max-height:80%; overflow-y:auto; }
+        .form-group { margin-bottom:1rem; }
+        label { font-weight:600; display:block; margin-bottom:0.5rem; }
+        input[type="text"] { width:100%; padding:0.8rem; border:1px solid #cbd5e1; border-radius:20px; }
+        .editor-wrapper { border:1px solid #e2e8f0; border-radius:24px; padding:0.5rem; background:#fefefe; }
+        .answers-section { background:#f9fafb; border-radius:24px; padding:1.2rem; margin-top:1rem; }
+        .answer-item { display:flex; align-items:center; gap:12px; margin-bottom:12px; background:white; padding:8px 12px; border-radius:60px; border:1px solid #e2e8f0; }
+        .answer-text { flex:1; padding:8px 12px; border:1px solid #cbd5e1; border-radius:30px; }
+        .answer-correct { width:24px; height:24px; accent-color:#3b82f6; }
+        .add-answer { margin-top:12px; background:#eef2ff; border:none; padding:0.5rem 1rem; border-radius:40px; cursor:pointer; }
+        .checkbox-group { margin:1rem 0; display:flex; align-items:center; gap:12px; }
+    </style>
+</head>
+<body>
+<div class="container">
+    <a href="index.html" class="back-link">← На главную</a>
+    <div class="card">
+        <h2>База заданий</h2>
+        <button id="createTaskBtn" class="btn btn-primary" style="margin-bottom:1rem;">+ Создать задание</button>
+        <div id="tasksList"></div>
+    </div>
+</div>
+
+<div id="taskModal" class="modal">
+    <div class="modal-content">
+        <h3 id="modalTitle">Создание задания</h3>
+        <div class="form-group"><label>Заголовок задания</label><input type="text" id="taskTitle"></div>
+        <div class="form-group"><label>Текст задания</label><div class="editor-wrapper"><div id="editorjs"></div></div></div>
+        <div class="checkbox-group"><input type="checkbox" id="requireFile"><label>Требуется прикрепление файлов</label></div>
+        <div class="answers-section">
+            <label>Варианты ответов (отметьте правильные)</label>
+            <div id="answersList"></div>
+            <button type="button" id="addAnswerBtn" class="add-answer">+ Добавить вариант</button>
+        </div>
+        <div class="modal-buttons" style="display:flex; justify-content:flex-end; gap:12px; margin-top:1rem;">
+            <button id="cancelTaskBtn" class="btn">Отмена</button>
+            <button id="saveTaskBtn" class="btn btn-primary">Сохранить</button>
+        </div>
+    </div>
+</div>
+
+<script>
+    let tasks = [];
+    let currentTaskId = null;
+    let editorInstance = null;
+    let currentAnswers = [];
+    
+    function loadTasks() { tasks = JSON.parse(localStorage.getItem("tasks_base") || "[]"); renderTasks(); }
+    function saveTasks() { localStorage.setItem("tasks_base", JSON.stringify(tasks)); }
+    
+    function renderTasks() {
+        const container = document.getElementById("tasksList");
+        if(tasks.length===0) { container.innerHTML = "<p>Нет заданий. Создайте первое задание.</p>"; return; }
+        container.innerHTML = tasks.map((t, idx) => `
+            <div class="task-item">
+                <div class="task-info"><h3>${escapeHtml(t.title)}</h3><p>Вариантов: ${t.answerOptions?.length || 0}</p></div>
+                <div class="task-actions"><button class="btn edit-task" data-idx="${idx}">Редактировать</button><button class="btn btn-danger delete-task" data-idx="${idx}">Удалить</button></div>
+            </div>
+        `).join("");
+        document.querySelectorAll(".edit-task").forEach(btn => btn.addEventListener("click", (e) => { const idx = parseInt(btn.getAttribute("data-idx")); openTaskModal(tasks[idx], idx); }));
+        document.querySelectorAll(".delete-task").forEach(btn => btn.addEventListener("click", (e) => { if(confirm("Удалить задание?")) { const idx = parseInt(btn.getAttribute("data-idx")); tasks.splice(idx,1); saveTasks(); renderTasks(); } }));
+    }
+    
+    function openTaskModal(task, idx) {
+        currentTaskId = idx !== undefined ? idx : null;
+        document.getElementById("taskTitle").value = task ? task.title : "";
+        document.getElementById("requireFile").checked = task ? (task.requireFileAttachment||false) : false;
+        if(task && task.editorData && editorInstance) editorInstance.render(task.editorData);
+        else if(editorInstance) editorInstance.clear();
+        currentAnswers = task ? (task.answers || []) : [];
+        renderAnswersUI();
+        document.getElementById("modalTitle").innerText = task ? "Редактирование задания" : "Создание задания";
+        document.getElementById("taskModal").style.display = "flex";
+    }
+    
+    function renderAnswersUI() {
+        const container = document.getElementById("answersList");
+        if(currentAnswers.length===0) container.innerHTML = "<div style='padding:1rem; text-align:center;'>Нет вариантов ответа</div>";
+        else {
+            container.innerHTML = currentAnswers.map((a, idx) => `
+                <div class="answer-item">
+                    <input type="checkbox" class="answer-correct" data-idx="${idx}" ${a.isCorrect ? 'checked' : ''}>
+                    <input type="text" class="answer-text" value="${escapeHtml(a.text)}" placeholder="Вариант ответа" data-idx="${idx}">
+                    <button class="btn-icon remove-answer" data-idx="${idx}" style="background:none; border:none; cursor:pointer;">Удалить</button>
+                </div>
+            `).join("");
+            document.querySelectorAll(".answer-correct").forEach(cb => cb.addEventListener("change", (e) => { const idx = parseInt(cb.getAttribute("data-idx")); if(currentAnswers[idx]) currentAnswers[idx].isCorrect = cb.checked; }));
+            document.querySelectorAll(".answer-text").forEach(inp => inp.addEventListener("input", (e) => { const idx = parseInt(inp.getAttribute("data-idx")); if(currentAnswers[idx]) currentAnswers[idx].text = inp.value; }));
+            document.querySelectorAll(".remove-answer").forEach(btn => btn.addEventListener("click", (e) => { const idx = parseInt(btn.getAttribute("data-idx")); currentAnswers.splice(idx,1); renderAnswersUI(); }));
+        }
+    }
+    
+    async function saveCurrentTask() {
+        const title = document.getElementById("taskTitle").value.trim();
+        if(!title) { alert("Введите заголовок"); return; }
+        if(currentAnswers.length===0) { alert("Добавьте хотя бы один вариант ответа"); return; }
+        if(currentAnswers.some(a=>!a.text.trim())) { alert("Все варианты должны содержать текст"); return; }
+        if(!currentAnswers.some(a=>a.isCorrect)) { alert("Выберите хотя бы один правильный ответ"); return; }
+        let editorData = editorInstance ? await editorInstance.save() : { blocks: [] };
+        const newTask = {
+            id: currentTaskId !== null ? tasks[currentTaskId].id : Date.now() + "_" + Math.random(),
+            title: title,
+            editorData: editorData,
+            answers: currentAnswers.map(a=>({ text: a.text, isCorrect: a.isCorrect })),
+            answerOptions: currentAnswers.map(a=>a.text),
+            correctIndices: currentAnswers.reduce((arr,a,idx)=>{ if(a.isCorrect) arr.push(idx); return arr; }, []),
+            requireFileAttachment: document.getElementById("requireFile").checked
+        };
+        if(currentTaskId !== null) tasks[currentTaskId] = newTask;
+        else tasks.push(newTask);
+        saveTasks(); renderTasks();
+        document.getElementById("taskModal").style.display = "none";
+        resetModal();
+    }
+    
+    function resetModal() {
+        document.getElementById("taskTitle").value = "";
+        document.getElementById("requireFile").checked = false;
+        currentAnswers = [];
+        renderAnswersUI();
+        if(editorInstance) editorInstance.clear();
+        currentTaskId = null;
+    }
+    
+    async function initEditor() {
+        class CustomImage {
+            constructor({ data }) { this.data = data; this.wrapper = null; }
+            static get isReadOnlySupported() { return true; }
+            render() {
+                this.wrapper = document.createElement('div');
+                if (this.data && this.data.file && this.data.file.url) {
+                    const img = document.createElement('img'); img.src = this.data.file.url; img.style.maxWidth = '100%'; this.wrapper.appendChild(img);
+                    if (this.data.caption) { const cap = document.createElement('figcaption'); cap.innerText = this.data.caption; this.wrapper.appendChild(cap); }
+                } else {
+                    const btn = document.createElement('button'); btn.innerText = 'Загрузить изображение'; btn.style.padding = '8px'; btn.style.cursor = 'pointer';
+                    btn.onclick = () => {
+                        const input = document.createElement('input'); input.type = 'file'; input.accept = 'image/*';
+                        input.onchange = (e) => {
+                            const file = e.target.files[0];
+                            if(file) {
+                                const reader = new FileReader();
+                                reader.onload = (ev) => {
+                                    this.data = { file: { url: ev.target.result }, caption: '' };
+                                    this.wrapper.innerHTML = '';
+                                    const img = document.createElement('img'); img.src = ev.target.result; img.style.maxWidth = '100%'; this.wrapper.appendChild(img);
+                                };
+                                reader.readAsDataURL(file);
+                            }
+                        };
+                        input.click();
+                    };
+                    this.wrapper.appendChild(btn);
+                }
+                return this.wrapper;
+            }
+            save() { return this.data; }
+        }
+        const tools = {
+            header: { class: window.Header, config: { placeholder: "Введите заголовок..." } },
+            list: { class: window.EditorjsList, inlineToolbar: true },
+            paragraph: { class: window.Paragraph, inlineToolbar: true },
+            image: { class: CustomImage }
+        };
+        editorInstance = new window.EditorJS({ holder: "editorjs", tools: tools, placeholder: "Текст задания..." });
+    }
+    
+    document.getElementById("createTaskBtn").addEventListener("click", () => openTaskModal(null));
+    document.getElementById("addAnswerBtn").addEventListener("click", () => { currentAnswers.push({ text: "", isCorrect: false }); renderAnswersUI(); });
+    document.getElementById("saveTaskBtn").addEventListener("click", saveCurrentTask);
+    document.getElementById("cancelTaskBtn").addEventListener("click", () => { document.getElementById("taskModal").style.display = "none"; resetModal(); });
+    function escapeHtml(str) { if(!str) return ""; return str.replace(/[&<>]/g, m => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;' }[m])); }
+    loadTasks(); initEditor();
+</script>
+</body>
+</html>
