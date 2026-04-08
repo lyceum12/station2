@@ -45,10 +45,10 @@
 <body><div class="app-window" id="appWindow"></div></body>
 <script>
     let currentSessionId=null, currentTest=null, questionsOrder=[], currentIndex=0, timerInterval=null, finished=false;
-    async function fetchTests(){ const r=await fetch('/api/tests'); return r.json(); }
+    async function fetchTests(){const r=await fetch('/api/tests');return r.json();}
     async function startSession(testId, regNumber, studentName){
         const r=await fetch('/api/start-session',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({testId,studentRegNumber:regNumber,studentName})});
-        if(!r.ok){ const err=await r.json(); throw new Error(err.error); }
+        if(!r.ok){const err=await r.json();throw new Error(err.error);}
         const data=await r.json();
         currentSessionId=data.sessionId;
         localStorage.setItem('quiz_session_id',currentSessionId);
@@ -58,7 +58,7 @@
         const sid=localStorage.getItem('quiz_session_id');
         if(!sid) return null;
         const r=await fetch(`/api/session/${sid}`);
-        if(r.status===404){ localStorage.removeItem('quiz_session_id'); return null; }
+        if(r.status===404){localStorage.removeItem('quiz_session_id');return null;}
         return r.json();
     }
     async function updateSession(answers, idx){
@@ -75,38 +75,41 @@
         if(session){
             const tests=await fetchTests();
             currentTest=tests.find(t=>t.id===session.testId);
-            if(!currentTest){ localStorage.removeItem('quiz_session_id'); showLogin(); return; }
+            if(!currentTest){localStorage.removeItem('quiz_session_id');showLogin();return;}
             questionsOrder=session.questionsOrder;
             currentIndex=session.currentIndex;
             currentSessionId=session.id;
+            sessionAnswers=session.answers||{};
             buildUI();
             startTimer(session.endTimestamp);
-            renderCurrentQuestion();
+            await renderCurrentQuestion();
             renderNav();
             updateCounter();
-        } else showLogin();
+        }else showLogin();
     }
+    let sessionAnswers={};
     function showLogin(){
         document.getElementById('appWindow').innerHTML=`<div class="login-overlay"><div class="login-card"><h2>Вход в тестирование</h2><p>Введите код участника</p><input type="text" id="regCode" placeholder="Код участника"><button id="loginBtn" style="background:#1E325A;color:white;padding:0.6rem 2rem;border:none;border-radius:40px;">Войти</button><div id="loginError" class="error-msg"></div></div></div>`;
         document.getElementById('loginBtn').addEventListener('click',async()=>{
             const code=document.getElementById('regCode').value.trim();
-            if(!code){ document.getElementById('loginError').innerText='Введите код'; return; }
+            if(!code){document.getElementById('loginError').innerText='Введите код';return;}
             const tests=await fetchTests();
             let foundTest=null, foundStudent=null;
-            for(let t of tests){ const s=(t.students||[]).find(st=>st.registrationNumber===code); if(s){ foundTest=t; foundStudent=s; break; } }
-            if(!foundTest){ document.getElementById('loginError').innerText='Код не найден'; return; }
+            for(let t of tests){const s=(t.students||[]).find(st=>st.registrationNumber===code);if(s){foundTest=t;foundStudent=s;break;}}
+            if(!foundTest){document.getElementById('loginError').innerText='Код не найден';return;}
             try{
                 const data=await startSession(foundTest.id,code,foundStudent.fullName);
                 currentTest=foundTest;
                 questionsOrder=data.questionsOrder;
                 currentIndex=0;
                 currentSessionId=data.sessionId;
+                sessionAnswers={};
                 buildUI();
                 startTimer(data.endTimestamp);
-                renderCurrentQuestion();
+                await renderCurrentQuestion();
                 renderNav();
                 updateCounter();
-            }catch(e){ document.getElementById('loginError').innerText=e.message; }
+            }catch(e){document.getElementById('loginError').innerText=e.message;}
         });
     }
     function buildUI(){
@@ -126,7 +129,6 @@
         document.getElementById('answerInput').oninput=saveCurrentAnswer;
         window.zoomTarget=document.getElementById('questionContent');
     }
-    let sessionAnswers={};
     async function saveCurrentAnswer(){
         const qid=questionsOrder[currentIndex];
         const text=document.getElementById('answerInput').value;
@@ -138,6 +140,7 @@
     }
     async function renderCurrentQuestion(){
         const qid=questionsOrder[currentIndex];
+        // всегда получаем актуальную версию вопроса из currentTest (которая обновляется при изменениях учителя)
         const q=currentTest.questions.find(qq=>qq.id===qid);
         if(!q) return;
         let html='';
@@ -145,7 +148,7 @@
             for(let b of q.editorData.blocks){
                 if(b.type==='paragraph') html+=`<p>${b.data.text}</p>`;
                 else if(b.type==='header') html+=`<h${b.data.level}>${b.data.text}</h${b.data.level}>`;
-                else if(b.type==='list'){ const tag=b.data.style==='ordered'?'ol':'ul'; html+=`<${tag}>`; for(let i of b.data.items) html+=`<li>${i}</li>`; html+=`</${tag}>`; }
+                else if(b.type==='list'){const tag=b.data.style==='ordered'?'ol':'ul';html+=`<${tag}>`;for(let i of b.data.items)html+=`<li>${i}</li>`;html+=`</${tag}>`;}
                 else if(b.type==='image') html+=`<img src="${b.data.file.url}" alt="${b.data.caption||''}">`;
                 else html+=`<div>${JSON.stringify(b.data)}</div>`;
             }
@@ -160,7 +163,7 @@
         if(q.requireFileAttachment){
             bar.innerHTML=`<div><button id="attachFileBtn" class="file-action-btn">Прикрепить файл</button></div><div id="fileList"></div>`;
             document.getElementById('attachFileBtn').onclick=()=>{
-                const input=document.createElement('input'); input.type='file';
+                const input=document.createElement('input');input.type='file';
                 input.onchange=async e=>{
                     const file=e.target.files[0];
                     if(file){
@@ -200,7 +203,7 @@
             html+=`<button class="q-btn ${i===currentIndex?'current':''} ${answered?'answered':''}" data-idx="${i}">${i+1}</button>`;
         }
         container.innerHTML=html;
-        document.querySelectorAll('.q-btn').forEach(btn=>btn.onclick=()=>{ saveCurrentAnswer(); currentIndex=parseInt(btn.dataset.idx); renderCurrentQuestion(); renderNav(); updateCounter(); });
+        document.querySelectorAll('.q-btn').forEach(btn=>btn.onclick=()=>{saveCurrentAnswer();currentIndex=parseInt(btn.dataset.idx);renderCurrentQuestion();renderNav();updateCounter();});
     }
     function updateCounter(){
         let cnt=0;
@@ -210,12 +213,12 @@
     function changeQuestion(delta){
         saveCurrentAnswer();
         const ni=currentIndex+delta;
-        if(ni>=0 && ni<questionsOrder.length){ currentIndex=ni; renderCurrentQuestion(); renderNav(); updateCounter(); }
+        if(ni>=0 && ni<questionsOrder.length){currentIndex=ni;renderCurrentQuestion();renderNav();updateCounter();}
     }
     function changeFontSize(delta){
         const cur=parseFloat(getComputedStyle(window.zoomTarget).fontSize);
         let n=cur+delta;
-        if(n<10)n=10; if(n>32)n=32;
+        if(n<10)n=10;if(n>32)n=32;
         window.zoomTarget.style.fontSize=n+'px';
     }
     function startTimer(endTime){
@@ -224,7 +227,7 @@
             const rem=Math.max(0,endTime-Date.now());
             const m=Math.floor(rem/60000), s=Math.floor((rem%60000)/1000);
             document.getElementById('timerDisplay').innerText=`${m.toString().padStart(2,'0')}:${s.toString().padStart(2,'0')}`;
-            if(rem<=0){ clearInterval(timerInterval); finish(true); }
+            if(rem<=0){clearInterval(timerInterval);finish(true);}
         };
         update();
         timerInterval=setInterval(update,1000);
@@ -261,7 +264,7 @@
             details.push({title:q.titleQuestion,userAnswer:userText,correctAnswer:correctOpts,isCorrect});
         }
         const total=questions.length, percent=Math.round((correctCount/total)*100);
-        let html=`<div class="results-container"><h1>Результаты тестирования</h1><p><strong>Ученик:</strong> ${escapeHtml(sessionAnswers?.studentName||'')}</p><p><strong>Ваш результат:</strong> ${correctCount} из ${total} (${percent}%)</p><hr>`;
+        let html=`<div class="results-container"><h1>Результаты тестирования</h1><p><strong>Ученик:</strong> ${escapeHtml(currentTest.students?.find(s=>s.registrationNumber===currentSessionId?.studentRegNumber)?.fullName||'')}</p><p><strong>Ваш результат:</strong> ${correctCount} из ${total} (${percent}%)</p><hr>`;
         if(showDetails){
             html+=`<h2>Разбор вопросов</h2>`;
             for(let i=0;i<details.length;i++){
@@ -274,7 +277,7 @@
         html+=`<button id="restartBtn" style="margin-top:2rem;background:#3b82f6;color:white;border:none;padding:0.8rem 2rem;border-radius:40px;">Завершить</button></div>`;
         return html;
     }
-    function escapeHtml(s){ if(!s) return ''; return s.replace(/[&<>]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[m])); }
+    function escapeHtml(s){if(!s)return '';return s.replace(/[&<>]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[m]));}
     init();
 </script>
 </body>
