@@ -72,7 +72,27 @@
     document.getElementById('addFromGroupBtn').addEventListener('click',async()=>{ const groupName=document.getElementById('groupSelect').value; if(!groupName){ alert('Выберите группу'); return; } const usersInGroup=allUsers.filter(u=>u.group===groupName); if(!usersInGroup.length){ alert('В группе нет пользователей'); return; } let tests=await fetchTests(); const test=tests.find(t=>t.id===currentTestId); if(test){ if(!test.students) test.students=[]; for(let u of usersInGroup) if(!test.students.some(s=>s.registrationNumber===u.registrationNumber)) test.students.push({fullName:u.fullName,registrationNumber:u.registrationNumber}); await saveTests(tests); currentTest=test; renderStudents(); alert(`Добавлено ${usersInGroup.length} учеников`); } });
     document.getElementById('saveTimeBtn').addEventListener('click',async()=>{ const nt=parseInt(document.getElementById('timeLimit').value); if(isNaN(nt)||nt<1){ alert('Введите корректное время'); return; } let tests=await fetchTests(); const test=tests.find(t=>t.id===currentTestId); if(test){ test.timeLimitMinutes=nt; await saveTests(tests); currentTest=test; alert('Время сохранено'); } });
     document.getElementById('saveShowAnswersBtn').addEventListener('click',async()=>{ const show=document.getElementById('showAnswersCheckbox').checked; let tests=await fetchTests(); const test=tests.find(t=>t.id===currentTestId); if(test){ test.showCorrectAnswersAfterTest=show; await saveTests(tests); currentTest=test; alert('Настройка сохранена'); } });
-    function calculateScore(result,questions){ let correct=0; for(let ans of result.answers){ const q=questions.find(qq=>qq.id===ans.questionId); if(!q) continue; let correctIndices=q.correctIndices||q.answers?.reduce((arr,a,idx)=>{if(a.isCorrect)arr.push(idx);return arr},[]); const userAnswer=ans.answerText?.trim().toLowerCase()||''; const opts=q.answerOptions||[]; const userSelected=opts.reduce((arr,opt,i)=>opt.toLowerCase()===userAnswer?[...arr,i]:arr,[]); const isCorrect=userSelected.length===correctIndices.length&&userSelected.every(i=>correctIndices.includes(i)); if(isCorrect) correct++; } return {correct,total:questions.length}; }
+    
+    function isAnswerCorrect(q, userAnswerText, override){
+        if(override !== undefined) return override;
+        let correctIndices=q.correctIndices||q.answers?.reduce((arr,a,idx)=>{if(a.isCorrect)arr.push(idx);return arr},[]);
+        const opts=q.answerOptions||[];
+        const userLow=userAnswerText?.trim().toLowerCase()||'';
+        const userSelected=opts.reduce((arr,opt,i)=>opt.toLowerCase()===userLow?[...arr,i]:arr,[]);
+        return userSelected.length===correctIndices.length && userSelected.every(i=>correctIndices.includes(i));
+    }
+    
+    function calculateScore(result, questions){
+        let correct=0;
+        for(let ans of result.answers){
+            const q=questions.find(qq=>qq.id===ans.questionId);
+            if(!q) continue;
+            const isCorr = isAnswerCorrect(q, ans.answerText, ans.isCorrectOverride);
+            if(isCorr) correct++;
+        }
+        return {correct, total:questions.length};
+    }
+    
     async function renderResults(){
         const container=document.getElementById('resultsList');
         const results=currentTest.results||[];
@@ -85,6 +105,7 @@
         document.querySelectorAll('.view-result').forEach(btn=>btn.addEventListener('click',()=>{ const idx=parseInt(btn.dataset.idx); showResultDetails(currentTest.results[idx]); }));
         document.querySelectorAll('.reevaluate-result').forEach(btn=>btn.addEventListener('click',()=>{ const idx=parseInt(btn.dataset.idx); openReevaluateModal(currentTest.results[idx], idx); }));
     }
+    
     function showResultDetails(result){
         const modal=document.getElementById('answersModal'), container=document.getElementById('modalAnswers');
         const questions=currentTest.questions||[];
@@ -95,19 +116,14 @@
             const userAnswerText=userAns?userAns.answerText:'(нет ответа)';
             let correctIndices=q.correctIndices||q.answers?.reduce((arr,a,idx)=>{if(a.isCorrect)arr.push(idx);return arr},[]);
             const correctOptions=(q.answerOptions||[]).filter((_,idx)=>correctIndices.includes(idx)).join(', ');
-            let isCorrect=false;
-            if(userAns){
-                const opts=q.answerOptions||[];
-                const userLow=userAns.answerText?.trim().toLowerCase()||'';
-                const sel=opts.reduce((arr,opt,i)=>opt.toLowerCase()===userLow?[...arr,i]:arr,[]);
-                isCorrect=sel.length===correctIndices.length&&sel.every(i=>correctIndices.includes(i));
-            }
+            const isCorrect = isAnswerCorrect(q, userAns?.answerText, userAns?.isCorrectOverride);
             html+=`<div class="question-detail"><strong>Вопрос ${i+1}: ${escapeHtml(q.titleQuestion)}</strong><br>Ответ: ${escapeHtml(userAnswerText)}<br>Правильный: ${escapeHtml(correctOptions)}<br><span class="${isCorrect?'correct':'incorrect'}">${isCorrect?'Правильно':'Неправильно'}</span>`;
             if(userAns?.files?.length) html+=`<div><strong>Файлы:</strong> ${userAns.files.map(f=>`<a href="${f.dataURL}" download="${f.name}" target="_blank" class="file-link">${escapeHtml(f.name)}</a>`).join(' ')}</div>`;
             html+=`</div>`;
         }
         container.innerHTML=html; modal.style.display='flex';
     }
+    
     function openReevaluateModal(result, resultIdx){
         const modal=document.getElementById('reevaluateModal'), container=document.getElementById('reevaluateList');
         const questions=currentTest.questions||[];
@@ -116,7 +132,8 @@
             const q=questions[i];
             const userAns=result.answers.find(a=>a.questionId===q.id);
             const userAnswerText=userAns?userAns.answerText:'';
-            html+=`<div style="margin-bottom:1rem;"><strong>${i+1}. ${escapeHtml(q.titleQuestion)}</strong><br>Ответ: ${escapeHtml(userAnswerText)}<br><label><input type="checkbox" class="correct-checkbox" data-qidx="${i}" ${userAns?.isCorrectOverride?'checked':''}> Считать правильным</label></div>`;
+            const currentOverride = userAns?.isCorrectOverride;
+            html+=`<div style="margin-bottom:1rem;"><strong>${i+1}. ${escapeHtml(q.titleQuestion)}</strong><br>Ответ: ${escapeHtml(userAnswerText)}<br><label><input type="checkbox" class="correct-checkbox" data-qidx="${i}" ${currentOverride===true?'checked':''}> Считать правильным</label><br><small>(по умолчанию оставьте unchecked для автоматической оценки)</small></div>`;
         }
         container.innerHTML=html;
         modal.style.display='flex';
@@ -125,10 +142,10 @@
             for(let i=0;i<questions.length;i++){
                 const cb=document.querySelector(`.correct-checkbox[data-qidx="${i}"]`);
                 if(cb){
-                    const isCorrectOverride=cb.checked;
+                    const isCorrectOverride = cb.checked;
                     const qid=questions[i].id;
                     const idx=newAnswers.findIndex(a=>a.questionId===qid);
-                    if(idx!==-1) newAnswers[idx].isCorrectOverride=isCorrectOverride;
+                    if(idx!==-1) newAnswers[idx].isCorrectOverride = isCorrectOverride;
                     else newAnswers.push({questionId:qid,answerText:'',isCorrectOverride});
                 }
             }
@@ -145,6 +162,7 @@
         };
         document.getElementById('cancelReevalBtn').onclick=()=>modal.style.display='none';
     }
+    
     document.getElementById('closeModalBtn').addEventListener('click',()=>document.getElementById('answersModal').style.display='none');
     function escapeHtml(s){ if(!s) return ''; return s.replace(/[&<>]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[m])); }
     loadAll();
