@@ -36,16 +36,16 @@
 <div id="reevaluateModal" class="modal"><div class="modal-content"><h3>Ручное переоценивание</h3><div id="reevaluateList"></div><button id="saveReevalBtn" class="btn btn-primary">Сохранить изменения</button><button id="cancelReevalBtn" class="btn">Отмена</button></div></div>
 <script>
     let currentTestId=null, currentTest=null, groups=[], allUsers=[];
-    async function fetchTests(){ const r=await fetch('/api/tests'); return r.json(); }
-    async function saveTests(t){ await fetch('/api/tests',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(t)}); }
-    async function fetchUsers(){ const r=await fetch('/api/users'); return r.json(); }
+    async function fetchTests(){const r=await fetch('/api/tests');return r.json();}
+    async function saveTests(t){await fetch('/api/tests',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(t)});}
+    async function fetchUsers(){const r=await fetch('/api/users');return r.json();}
     async function loadAll(){
         const tests=await fetchTests();
         const params=new URLSearchParams(location.search);
         currentTestId=params.get('testId');
-        if(!currentTestId){ alert('Тест не указан'); location.href='index.html'; return; }
+        if(!currentTestId){alert('Тест не указан');location.href='index.html';return;}
         currentTest=tests.find(t=>t.id===currentTestId);
-        if(!currentTest){ alert('Тест не найден'); location.href='index.html'; return; }
+        if(!currentTest){alert('Тест не найден');location.href='index.html';return;}
         document.getElementById('backLink').href=`questions.html?testId=${currentTestId}`;
         document.getElementById('timeLimit').value=currentTest.timeLimitMinutes||60;
         document.getElementById('showAnswersCheckbox').checked=currentTest.showCorrectAnswersAfterTest||false;
@@ -63,36 +63,34 @@
     function renderStudents(){
         const tbody=document.getElementById('studentsTbody');
         const students=currentTest.students||[];
-        if(!students.length){ tbody.innerHTML='<tr><td colspan="3">Нет учеников</td></tr>'; return; }
+        if(!students.length){tbody.innerHTML='<tr><td colspan="3">Нет учеников</td></tr>';return;}
         tbody.innerHTML=students.map((s,idx)=>`<tr><td><input type="text" class="student-name" value="${escapeHtml(s.fullName)}" data-idx="${idx}"></td><td><input type="text" class="student-reg" value="${escapeHtml(s.registrationNumber)}" data-idx="${idx}"></td><td><button class="btn save-student" data-idx="${idx}">Сохранить</button> <button class="btn delete-student" data-idx="${idx}" style="color:red;">Удалить</button></td></tr>`).join('');
-        document.querySelectorAll('.save-student').forEach(btn=>btn.addEventListener('click',async()=>{ const idx=parseInt(btn.dataset.idx); const row=btn.closest('tr'); const name=row.querySelector('.student-name').value.trim(); const reg=row.querySelector('.student-reg').value.trim(); if(name&&reg){ let tests=await fetchTests(); const test=tests.find(t=>t.id===currentTestId); if(test){ if(!test.students) test.students=[]; test.students[idx]={fullName:name,registrationNumber:reg}; await saveTests(tests); currentTest=test; renderStudents(); } } else alert('Заполните поля'); }));
-        document.querySelectorAll('.delete-student').forEach(btn=>btn.addEventListener('click',async()=>{ if(confirm('Удалить ученика?')){ let tests=await fetchTests(); const test=tests.find(t=>t.id===currentTestId); if(test&&test.students){ test.students.splice(parseInt(btn.dataset.idx),1); await saveTests(tests); currentTest=test; renderStudents(); } } }));
+        document.querySelectorAll('.save-student').forEach(btn=>btn.addEventListener('click',async()=>{const idx=parseInt(btn.dataset.idx);const row=btn.closest('tr');const name=row.querySelector('.student-name').value.trim();const reg=row.querySelector('.student-reg').value.trim();if(name&&reg){let tests=await fetchTests();const test=tests.find(t=>t.id===currentTestId);if(test){if(!test.students)test.students=[];test.students[idx]={fullName:name,registrationNumber:reg};await saveTests(tests);currentTest=test;renderStudents();}}else alert('Заполните поля');}));
+        document.querySelectorAll('.delete-student').forEach(btn=>btn.addEventListener('click',async()=>{if(confirm('Удалить ученика?')){let tests=await fetchTests();const test=tests.find(t=>t.id===currentTestId);if(test&&test.students){test.students.splice(parseInt(btn.dataset.idx),1);await saveTests(tests);currentTest=test;renderStudents();}}}));
     }
-    document.getElementById('addStudentBtn').addEventListener('click',async()=>{ const name=prompt('ФИО'); if(!name) return; const reg=prompt('Код участника'); if(!reg) return; let tests=await fetchTests(); const test=tests.find(t=>t.id===currentTestId); if(test){ if(!test.students) test.students=[]; test.students.push({fullName:name.trim(),registrationNumber:reg.trim()}); await saveTests(tests); currentTest=test; renderStudents(); } });
-    document.getElementById('addFromGroupBtn').addEventListener('click',async()=>{ const groupName=document.getElementById('groupSelect').value; if(!groupName){ alert('Выберите группу'); return; } const usersInGroup=allUsers.filter(u=>u.group===groupName); if(!usersInGroup.length){ alert('В группе нет пользователей'); return; } let tests=await fetchTests(); const test=tests.find(t=>t.id===currentTestId); if(test){ if(!test.students) test.students=[]; for(let u of usersInGroup) if(!test.students.some(s=>s.registrationNumber===u.registrationNumber)) test.students.push({fullName:u.fullName,registrationNumber:u.registrationNumber}); await saveTests(tests); currentTest=test; renderStudents(); alert(`Добавлено ${usersInGroup.length} учеников`); } });
-    document.getElementById('saveTimeBtn').addEventListener('click',async()=>{ const nt=parseInt(document.getElementById('timeLimit').value); if(isNaN(nt)||nt<1){ alert('Введите корректное время'); return; } let tests=await fetchTests(); const test=tests.find(t=>t.id===currentTestId); if(test){ test.timeLimitMinutes=nt; await saveTests(tests); currentTest=test; alert('Время сохранено'); } });
-    document.getElementById('saveShowAnswersBtn').addEventListener('click',async()=>{ const show=document.getElementById('showAnswersCheckbox').checked; let tests=await fetchTests(); const test=tests.find(t=>t.id===currentTestId); if(test){ test.showCorrectAnswersAfterTest=show; await saveTests(tests); currentTest=test; alert('Настройка сохранена'); } });
+    document.getElementById('addStudentBtn').addEventListener('click',async()=>{const name=prompt('ФИО');if(!name)return;const reg=prompt('Код участника');if(!reg)return;let tests=await fetchTests();const test=tests.find(t=>t.id===currentTestId);if(test){if(!test.students)test.students=[];test.students.push({fullName:name.trim(),registrationNumber:reg.trim()});await saveTests(tests);currentTest=test;renderStudents();}});
+    document.getElementById('addFromGroupBtn').addEventListener('click',async()=>{const groupName=document.getElementById('groupSelect').value;if(!groupName){alert('Выберите группу');return;}const usersInGroup=allUsers.filter(u=>u.group===groupName);if(!usersInGroup.length){alert('В группе нет пользователей');return;}let tests=await fetchTests();const test=tests.find(t=>t.id===currentTestId);if(test){if(!test.students)test.students=[];for(let u of usersInGroup)if(!test.students.some(s=>s.registrationNumber===u.registrationNumber))test.students.push({fullName:u.fullName,registrationNumber:u.registrationNumber});await saveTests(tests);currentTest=test;renderStudents();alert(`Добавлено ${usersInGroup.length} учеников`);}});
+    document.getElementById('saveTimeBtn').addEventListener('click',async()=>{const nt=parseInt(document.getElementById('timeLimit').value);if(isNaN(nt)||nt<1){alert('Введите корректное время');return;}let tests=await fetchTests();const test=tests.find(t=>t.id===currentTestId);if(test){test.timeLimitMinutes=nt;await saveTests(tests);currentTest=test;alert('Время сохранено');}});
+    document.getElementById('saveShowAnswersBtn').addEventListener('click',async()=>{const show=document.getElementById('showAnswersCheckbox').checked;let tests=await fetchTests();const test=tests.find(t=>t.id===currentTestId);if(test){test.showCorrectAnswersAfterTest=show;await saveTests(tests);currentTest=test;alert('Настройка сохранена');}});
     
-    function isAnswerCorrect(q, userAnswerText, override){
-        if(override !== undefined) return override;
-        let correctIndices=q.correctIndices||q.answers?.reduce((arr,a,idx)=>{if(a.isCorrect)arr.push(idx);return arr},[]);
-        const opts=q.answerOptions||[];
+    function isAnswerCorrect(question, userAnswerText, overrideFlag){
+        if(overrideFlag!==undefined) return overrideFlag;
+        let correctIndices=question.correctIndices||question.answers?.reduce((arr,a,idx)=>{if(a.isCorrect)arr.push(idx);return arr},[]);
+        const opts=question.answerOptions||[];
         const userLow=userAnswerText?.trim().toLowerCase()||'';
         const userSelected=opts.reduce((arr,opt,i)=>opt.toLowerCase()===userLow?[...arr,i]:arr,[]);
         return userSelected.length===correctIndices.length && userSelected.every(i=>correctIndices.includes(i));
     }
-    
-    function calculateScore(result, questions){
+    function calculateScoreWithOverride(result, questions){
         let correct=0;
         for(let ans of result.answers){
             const q=questions.find(qq=>qq.id===ans.questionId);
             if(!q) continue;
-            const isCorr = isAnswerCorrect(q, ans.answerText, ans.isCorrectOverride);
-            if(isCorr) correct++;
+            const isCorrect=ans.isCorrectOverride !== undefined ? ans.isCorrectOverride : isAnswerCorrect(q, ans.answerText);
+            if(isCorrect) correct++;
         }
-        return {correct, total:questions.length};
+        return {correct,total:questions.length};
     }
-    
     async function renderResults(){
         const container=document.getElementById('resultsList');
         const results=currentTest.results||[];
@@ -100,12 +98,11 @@
         const filterGroup=document.getElementById('resultGroupFilter').value;
         let filtered=results;
         if(filterGroup) filtered=results.filter(r=>allUsers.find(u=>u.registrationNumber===r.studentRegNumber)?.group===filterGroup);
-        if(!filtered.length){ container.innerHTML='<p>Нет результатов</p>'; return; }
-        container.innerHTML=`<table><thead><tr><th>Ученик</th><th>Код</th><th>Группа</th><th>Дата</th><th>Баллы</th><th>Действия</th></tr></thead><tbody>${filtered.map((r,idx)=>{ const origIdx=currentTest.results.findIndex(rr=>rr.finishedAt===r.finishedAt&&rr.studentRegNumber===r.studentRegNumber); const score=calculateScore(r,questions); const group=allUsers.find(u=>u.registrationNumber===r.studentRegNumber)?.group||'Без группы'; return `<tr><td>${escapeHtml(r.studentName)}</td><td>${escapeHtml(r.studentRegNumber)}</td><td>${escapeHtml(group)}</td><td>${new Date(r.finishedAt).toLocaleString()}</td><td>${score.correct}/${score.total}</td><td><button class="btn view-result" data-idx="${origIdx}">Просмотр</button> <button class="btn reevaluate-result" data-idx="${origIdx}">Переоценить</button></td></tr>`; }).join('')}</tbody></table>`;
-        document.querySelectorAll('.view-result').forEach(btn=>btn.addEventListener('click',()=>{ const idx=parseInt(btn.dataset.idx); showResultDetails(currentTest.results[idx]); }));
-        document.querySelectorAll('.reevaluate-result').forEach(btn=>btn.addEventListener('click',()=>{ const idx=parseInt(btn.dataset.idx); openReevaluateModal(currentTest.results[idx], idx); }));
+        if(!filtered.length){container.innerHTML='<p>Нет результатов</p>';return;}
+        container.innerHTML=`<table><thead><tr><th>Ученик</th><th>Код</th><th>Группа</th><th>Дата</th><th>Баллы</th><th>Действия</th></tr></thead><tbody>${filtered.map((r,idx)=>{const origIdx=currentTest.results.findIndex(rr=>rr.finishedAt===r.finishedAt&&rr.studentRegNumber===r.studentRegNumber);const score=calculateScoreWithOverride(r,questions);const group=allUsers.find(u=>u.registrationNumber===r.studentRegNumber)?.group||'Без группы';return `<tr><td>${escapeHtml(r.studentName)}</td><td>${escapeHtml(r.studentRegNumber)}</td><td>${escapeHtml(group)}</td><td>${new Date(r.finishedAt).toLocaleString()}</td><td>${score.correct}/${score.total}</td><td><button class="btn view-result" data-idx="${origIdx}">Просмотр</button> <button class="btn reevaluate-result" data-idx="${origIdx}">Переоценить</button></td></tr>`;}).join('')}</tbody></table>`;
+        document.querySelectorAll('.view-result').forEach(btn=>btn.addEventListener('click',()=>{const idx=parseInt(btn.dataset.idx);showResultDetails(currentTest.results[idx]);}));
+        document.querySelectorAll('.reevaluate-result').forEach(btn=>btn.addEventListener('click',()=>{const idx=parseInt(btn.dataset.idx);openReevaluateModal(currentTest.results[idx], idx);}));
     }
-    
     function showResultDetails(result){
         const modal=document.getElementById('answersModal'), container=document.getElementById('modalAnswers');
         const questions=currentTest.questions||[];
@@ -116,14 +113,15 @@
             const userAnswerText=userAns?userAns.answerText:'(нет ответа)';
             let correctIndices=q.correctIndices||q.answers?.reduce((arr,a,idx)=>{if(a.isCorrect)arr.push(idx);return arr},[]);
             const correctOptions=(q.answerOptions||[]).filter((_,idx)=>correctIndices.includes(idx)).join(', ');
-            const isCorrect = isAnswerCorrect(q, userAns?.answerText, userAns?.isCorrectOverride);
-            html+=`<div class="question-detail"><strong>Вопрос ${i+1}: ${escapeHtml(q.titleQuestion)}</strong><br>Ответ: ${escapeHtml(userAnswerText)}<br>Правильный: ${escapeHtml(correctOptions)}<br><span class="${isCorrect?'correct':'incorrect'}">${isCorrect?'Правильно':'Неправильно'}</span>`;
+            const isCorrect=userAns?.isCorrectOverride !== undefined ? userAns.isCorrectOverride : isAnswerCorrect(q, userAns?.answerText);
+            const statusClass=isCorrect?'correct':'incorrect';
+            const statusText=isCorrect?'Правильно':'Неправильно';
+            html+=`<div class="question-detail"><strong>Вопрос ${i+1}: ${escapeHtml(q.titleQuestion)}</strong><br>Ответ: ${escapeHtml(userAnswerText)}<br>Правильный: ${escapeHtml(correctOptions)}<br><span class="${statusClass}">${statusText}</span>`;
             if(userAns?.files?.length) html+=`<div><strong>Файлы:</strong> ${userAns.files.map(f=>`<a href="${f.dataURL}" download="${f.name}" target="_blank" class="file-link">${escapeHtml(f.name)}</a>`).join(' ')}</div>`;
             html+=`</div>`;
         }
         container.innerHTML=html; modal.style.display='flex';
     }
-    
     function openReevaluateModal(result, resultIdx){
         const modal=document.getElementById('reevaluateModal'), container=document.getElementById('reevaluateList');
         const questions=currentTest.questions||[];
@@ -132,8 +130,10 @@
             const q=questions[i];
             const userAns=result.answers.find(a=>a.questionId===q.id);
             const userAnswerText=userAns?userAns.answerText:'';
-            const currentOverride = userAns?.isCorrectOverride;
-            html+=`<div style="margin-bottom:1rem;"><strong>${i+1}. ${escapeHtml(q.titleQuestion)}</strong><br>Ответ: ${escapeHtml(userAnswerText)}<br><label><input type="checkbox" class="correct-checkbox" data-qidx="${i}" ${currentOverride===true?'checked':''}> Считать правильным</label><br><small>(по умолчанию оставьте unchecked для автоматической оценки)</small></div>`;
+            const currentOverride=userAns?.isCorrectOverride;
+            const isCorrectDefault=isAnswerCorrect(q, userAnswerText);
+            const isChecked = (currentOverride !== undefined) ? currentOverride : isCorrectDefault;
+            html+=`<div style="margin-bottom:1rem;"><strong>${i+1}. ${escapeHtml(q.titleQuestion)}</strong><br>Ответ: ${escapeHtml(userAnswerText)}<br><label><input type="checkbox" class="correct-checkbox" data-qidx="${i}" ${isChecked?'checked':''}> Считать правильным</label></div>`;
         }
         container.innerHTML=html;
         modal.style.display='flex';
@@ -142,10 +142,10 @@
             for(let i=0;i<questions.length;i++){
                 const cb=document.querySelector(`.correct-checkbox[data-qidx="${i}"]`);
                 if(cb){
-                    const isCorrectOverride = cb.checked;
+                    const isCorrectOverride=cb.checked;
                     const qid=questions[i].id;
                     const idx=newAnswers.findIndex(a=>a.questionId===qid);
-                    if(idx!==-1) newAnswers[idx].isCorrectOverride = isCorrectOverride;
+                    if(idx!==-1) newAnswers[idx].isCorrectOverride=isCorrectOverride;
                     else newAnswers.push({questionId:qid,answerText:'',isCorrectOverride});
                 }
             }
@@ -162,9 +162,8 @@
         };
         document.getElementById('cancelReevalBtn').onclick=()=>modal.style.display='none';
     }
-    
     document.getElementById('closeModalBtn').addEventListener('click',()=>document.getElementById('answersModal').style.display='none');
-    function escapeHtml(s){ if(!s) return ''; return s.replace(/[&<>]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[m])); }
+    function escapeHtml(s){if(!s)return '';return s.replace(/[&<>]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[m]));}
     loadAll();
 </script>
 </body>
