@@ -150,7 +150,7 @@
             <div class="test-card" data-id="${test.id}">
                 <div class="test-info">
                     <h3>${escapeHtml(test.title)}</h3>
-                    <p>Вопросов: ${test.questions?.length || 0} | Время: ${test.timeLimitMinutes || 60} мин</p>
+                    <p>Вопросов: ${test.questions?.length || 0} | Время: ${test.timeLimitMinutes} мин</p>
                 </div>
                 <div class="test-actions">
                     <button class="btn btn-outline edit-questions-btn" data-id="${test.id}">Редактировать вопросы</button>
