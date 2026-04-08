@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Управление пользователями и группами</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: system-ui, 'Segoe UI', 'Inter', sans-serif;
+        }
+        body {
+            background: #f1f5f9;
+            padding: 2rem 1.5rem;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        .back-link {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            background: white;
+            padding: 0.5rem 1rem;
+            border-radius: 40px;
+            text-decoration: none;
+            color: #1e293b;
+            font-weight: 500;
+            margin-bottom: 1.5rem;
+            border: 1px solid #e2e8f0;
+        }
+        .card {
+            background: white;
+            border-radius: 32px;
+            padding: 1.8rem;
+            margin-bottom: 2rem;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+        }
+        h2 {
+            font-size: 1.5rem;
+            margin-bottom: 1rem;
+        }
+        .btn {
+            border: none;
+            padding: 0.5rem 1.2rem;
+            border-radius: 40px;
+            font-weight: 600;
+            cursor: pointer;
+            background: #e2e8f0;
+        }
+        .btn-primary {
+            background: #3b82f6;
+            color: white;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 1rem;
+        }
+        th, td {
+            border: 1px solid #e2e8f0;
+            padding: 0.75rem;
+            text-align: left;
+        }
+        th {
+            background: #f8fafc;
+        }
+        input, select {
+            padding: 0.4rem;
+            border: 1px solid #cbd5e1;
+            border-radius: 12px;
+            width: 100%;
+        }
+        .action-icon {
+            cursor: pointer;
+            margin: 0 4px;
+        }
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.5);
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+        }
+        .modal-content {
+            background: white;
+            border-radius: 32px;
+            padding: 2rem;
+            max-width: 500px;
+            width: 90%;
+        }
+        .modal-content textarea {
+            width: 100%;
+            height: 150px;
+            margin: 1rem 0;
+            padding: 0.5rem;
+            border: 1px solid #cbd5e1;
+            border-radius: 16px;
+        }
+        .modal-buttons {
+            display: flex;
+            justify-content: flex-end;
+            gap: 12px;
+        }
+    </style>
+</head>
+<body>
+<div class="container">
+    <a href="index.html" class="back-link">← На главную</a>
+    <div class="card">
+        <h2>Группы</h2>
+        <div style="margin-bottom: 1rem;"><button id="addGroupBtn" class="btn">+ Добавить группу</button></div>
+        <table id="groupsTable"><thead><tr><th>Название группы</th><th>Действия</th></tr></thead><tbody id="groupsTbody"></tbody></table>
+    </div>
+    <div class="card">
+        <h2>Пользователи</h2>
+        <div style="margin-bottom: 1rem;">
+            <label>Группа:</label>
+            <select id="groupSelect"></select>
+            <button id="addUserBtn" class="btn" style="margin-left: 1rem;">+ Добавить пользователя</button>
+        </div>
+        <table id="usersTable"><thead><tr><th>ФИО</th><th>Код участника</th><th>Действия</th></tr></thead><tbody id="usersTbody"></tbody></table>
+    </div>
+</div>
+
+<div id="userModal" class="modal">
+    <div class="modal-content">
+        <h3>Добавление пользователей</h3>
+        <p>Введите ФИО (по одному на строку или через запятую)</p>
+        <textarea id="namesInput" placeholder="Иванов Иван Иванович&#10;Петров Петр Петрович"></textarea>
+        <p>Код участника будет сгенерирован автоматически (6 цифр)</p>
+        <div class="modal-buttons"><button id="cancelModalBtn" class="btn">Отмена</button><button id="confirmModalBtn" class="btn btn-primary">Добавить</button></div>
+    </div>
+</div>
+
+<script>
+    let groups = [], users = [], selectedGroup = "";
+    function loadData() {
+        groups = JSON.parse(localStorage.getItem("user_groups") || "[]");
+        users = JSON.parse(localStorage.getItem("users") || "[]");
+        renderGroups(); renderGroupSelect(); renderUsers();
+    }
+    function saveGroups() { localStorage.setItem("user_groups", JSON.stringify(groups)); }
+    function saveUsers() { localStorage.setItem("users", JSON.stringify(users)); }
+    function generateUniqueCode() { let code; do { code = Math.floor(100000 + Math.random() * 900000).toString(); } while(users.some(u => u.registrationNumber === code)); return code; }
+    function renderGroups() {
+        const tbody = document.getElementById("groupsTbody");
+        if(groups.length === 0) tbody.innerHTML = "<tr><td colspan='2'>Нет групп</td></tr>";
+        else {
+            tbody.innerHTML = groups.map((g, idx) => `<tr><td><input type="text" class="group-name" value="${escapeHtml(g.name)}" data-idx="${idx}"></td><td><span class="action-icon save-group" data-idx="${idx}">💾</span> <span class="action-icon delete-group" data-idx="${idx}">🗑️</span></td></tr>`).join("");
+        }
+        document.querySelectorAll(".save-group").forEach(btn => btn.addEventListener("click", (e) => { const idx = parseInt(btn.getAttribute("data-idx")); const newName = document.querySelector(`.group-name[data-idx="${idx}"]`).value.trim(); if(newName) { groups[idx].name = newName; saveGroups(); renderGroups(); renderGroupSelect(); } }));
+        document.querySelectorAll(".delete-group").forEach(btn => btn.addEventListener("click", (e) => { if(confirm("Удалить группу?")) { const idx = parseInt(btn.getAttribute("data-idx")); groups.splice(idx, 1); saveGroups(); renderGroups(); renderGroupSelect(); renderUsers(); } }));
+    }
+    function renderGroupSelect() {
+        const select = document.getElementById("groupSelect");
+        select.innerHTML = '<option value="">Выберите группу</option>' + groups.map(g => `<option value="${escapeHtml(g.name)}">${escapeHtml(g.name)}</option>`).join('');
+        selectedGroup = select.value;
+        select.addEventListener("change", (e) => { selectedGroup = e.target.value; renderUsers(); });
+    }
+    function renderUsers() {
+        let filtered = selectedGroup ? users.filter(u => u.group === selectedGroup) : users;
+        const tbody = document.getElementById("usersTbody");
+        if(filtered.length === 0) tbody.innerHTML = "<tr><td colspan='3'>Нет пользователей</td></tr>";
+        else {
+            tbody.innerHTML = filtered.map((u, idx) => {
+                const originalIdx = users.findIndex(us => us.id === u.id);
+                return `<tr><td><input type="text" class="user-name" value="${escapeHtml(u.fullName)}" data-idx="${originalIdx}"></td><td><input type="text" class="user-code" value="${escapeHtml(u.registrationNumber)}" data-idx="${originalIdx}"></td><td><span class="action-icon save-user" data-idx="${originalIdx}">💾</span> <span class="action-icon delete-user" data-idx="${originalIdx}">🗑️</span></td></tr>`;
+            }).join("");
+        }
+        document.querySelectorAll(".save-user").forEach(btn => btn.addEventListener("click", (e) => { const idx = parseInt(btn.getAttribute("data-idx")); const row = btn.closest("tr"); const newName = row.querySelector(".user-name").value.trim(); const newCode = row.querySelector(".user-code").value.trim(); if(newName && newCode) { users[idx].fullName = newName; users[idx].registrationNumber = newCode; saveUsers(); renderUsers(); } else alert("Заполните оба поля"); }));
+        document.querySelectorAll(".delete-user").forEach(btn => btn.addEventListener("click", (e) => { if(confirm("Удалить пользователя?")) { const idx = parseInt(btn.getAttribute("data-idx")); users.splice(idx, 1); saveUsers(); renderUsers(); } }));
+    }
+    const modal = document.getElementById("userModal");
+    document.getElementById("addUserBtn").addEventListener("click", () => { if(!selectedGroup) { alert("Выберите группу"); return; } modal.style.display = "flex"; });
+    document.getElementById("cancelModalBtn").addEventListener("click", () => { modal.style.display = "none"; document.getElementById("namesInput").value = ""; });
+    document.getElementById("confirmModalBtn").addEventListener("click", () => {
+        const raw = document.getElementById("namesInput").value;
+        let names = raw.split(/\r?\n/);
+        let finalNames = [];
+        for(let line of names) { if(line.includes(",")) finalNames.push(...line.split(",").map(s=>s.trim())); else if(line.trim()) finalNames.push(line.trim()); }
+        if(finalNames.length === 0) { alert("Введите хотя бы одно ФИО"); return; }
+        for(let name of finalNames) { const code = generateUniqueCode(); users.push({ id: Date.now() + "_" + Math.random(), fullName: name, registrationNumber: code, group: selectedGroup }); }
+        saveUsers(); renderUsers(); modal.style.display = "none"; document.getElementById("namesInput").value = ""; alert(`Добавлено ${finalNames.length} пользователей`);
+    });
+    function escapeHtml(str) { if(!str) return ""; return str.replace(/[&<>]/g, m => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;' }[m])); }
+    loadData();
+</script>
+</body>
+</html>
