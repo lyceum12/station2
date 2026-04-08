@@ -5,56 +5,53 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Тест-конструктор | Панель учителя</title>
     <style>
-        * { margin:0; padding:0; box-sizing:border-box; font-family: system-ui, 'Segoe UI', 'Inter', sans-serif; }
-        body { background:#f1f5f9; padding:2rem 1.5rem; }
-        .container { max-width:1200px; margin:0 auto; }
-        .header { display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; margin-bottom:2rem; gap:1rem; }
-        h1 { font-size:1.9rem; color:#0f172a; }
-        .btn { background:white; border:none; padding:0.6rem 1.3rem; border-radius:40px; font-weight:600; cursor:pointer; box-shadow:0 1px 2px rgba(0,0,0,0.05); }
-        .btn-primary { background:#3b82f6; color:white; }
-        .btn-outline { border:1px solid #cbd5e1; background:white; }
-        .btn-danger { background:#fee2e2; color:#b91c1c; }
-        .test-list { display:flex; flex-direction:column; gap:1rem; }
-        .test-card { background:white; border-radius:24px; padding:1.2rem 1.5rem; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; border:1px solid #e2e8f0; }
-        .test-info h3 { font-size:1.3rem; margin-bottom:6px; }
-        .test-info p { color:#475569; font-size:0.85rem; }
-        .test-actions { display:flex; gap:12px; }
-        .empty-state { background:white; border-radius:2rem; padding:3rem; text-align:center; color:#64748b; }
-        @media (max-width:640px) { .test-card { flex-direction:column; align-items:flex-start; gap:12px; } }
+        *{margin:0;padding:0;box-sizing:border-box;font-family:system-ui,'Segoe UI','Inter',sans-serif;}
+        body{background:#f1f5f9;padding:2rem 1.5rem;min-height:100vh;}
+        .container{max-width:1200px;margin:0 auto;}
+        .header{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;margin-bottom:2rem;gap:1rem;}
+        h1{font-size:1.9rem;font-weight:700;color:#0f172a;}
+        .btn{background:white;border:none;padding:0.6rem 1.3rem;border-radius:40px;font-weight:600;font-size:0.9rem;cursor:pointer;transition:0.2s;box-shadow:0 1px 2px rgba(0,0,0,0.05);display:inline-flex;align-items:center;gap:8px;}
+        .btn-primary{background:#3b82f6;color:white;box-shadow:0 4px 8px rgba(59,130,246,0.2);}
+        .btn-primary:hover{background:#2563eb;transform:translateY(-1px);}
+        .btn-outline{border:1px solid #cbd5e1;background:white;}
+        .btn-outline:hover{background:#f8fafc;border-color:#94a3b8;}
+        .btn-danger{background:#fee2e2;color:#b91c1c;}
+        .test-list{display:flex;flex-direction:column;gap:1rem;}
+        .test-card{background:white;border-radius:24px;padding:1.2rem 1.5rem;box-shadow:0 4px 12px rgba(0,0,0,0.05);display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;border:1px solid #e2e8f0;}
+        .test-info h3{font-size:1.3rem;margin-bottom:6px;}
+        .test-info p{color:#475569;font-size:0.85rem;}
+        .test-actions{display:flex;gap:12px;}
+        .empty-state{background:white;border-radius:2rem;padding:3rem;text-align:center;color:#64748b;}
+        footer{margin-top:3rem;text-align:center;font-size:0.8rem;color:#94a3b8;}
+        @media (max-width:640px){body{padding:1rem;}.test-card{flex-direction:column;align-items:flex-start;gap:12px;}}
     </style>
 </head>
 <body>
 <div class="container">
-    <div class="header">
-        <h1>Библиотека тестов</h1>
-        <div>
-            <button class="btn btn-outline" id="manageUsersBtn">Управление пользователями</button>
-            <button class="btn btn-outline" id="manageTasksBaseBtn">База заданий</button>
-            <button class="btn btn-primary" id="createTestBtn">Создать новый тест</button>
-        </div>
-    </div>
+    <div class="header"><h1>Библиотека тестов</h1><div><button class="btn btn-outline" id="manageUsersBtn">Управление пользователями</button><button class="btn btn-outline" id="manageTasksBaseBtn">База заданий</button><button class="btn btn-primary" id="createTestBtn">Создать новый тест</button></div></div>
     <div id="testsList" class="test-list"></div>
+    <footer>Редактируйте вопросы, добавляйте изображения</footer>
 </div>
 <script>
-    async function fetchTests() { const r=await fetch('/api/tests'); return r.json(); }
-    async function saveTests(tests) { await fetch('/api/tests',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(tests)}); }
-    async function renderTestsList() {
-        const tests = await fetchTests();
-        const container = document.getElementById('testsList');
-        if(!tests.length) { container.innerHTML='<div class="empty-state">Нет тестов. Создайте первый.</div>'; return; }
-        container.innerHTML = tests.map(test=>`<div class="test-card"><div class="test-info"><h3>${escapeHtml(test.title)}</h3><p>Вопросов: ${test.questions?.length||0} | Время: ${test.timeLimitMinutes||60} мин</p></div><div class="test-actions"><button class="btn btn-outline edit-questions" data-id="${test.id}">Вопросы</button><button class="btn btn-outline manage-test" data-id="${test.id}">Управление</button><button class="btn btn-danger delete-test" data-id="${test.id}">Удалить</button></div></div>`).join('');
-        document.querySelectorAll('.edit-questions').forEach(b=>b.addEventListener('click',()=>window.location.href=`questions.html?testId=${b.dataset.id}`));
-        document.querySelectorAll('.manage-test').forEach(b=>b.addEventListener('click',()=>window.location.href=`manage-test.html?testId=${b.dataset.id}`));
-        document.querySelectorAll('.delete-test').forEach(b=>b.addEventListener('click',async()=>{ if(confirm('Удалить тест?')){ let tests=await fetchTests(); tests=tests.filter(t=>t.id!==b.dataset.id); await saveTests(tests); renderTestsList(); } }));
+    async function fetchTests(){const r=await fetch('/api/tests');return r.json();}
+    async function saveTests(t){await fetch('/api/tests',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(t)});}
+    async function renderTestsList(){
+        const tests=await fetchTests();
+        const container=document.getElementById('testsList');
+        if(!tests.length){container.innerHTML='<div class="empty-state">Нет ни одного теста. Нажмите "Создать новый тест"</div>';return;}
+        container.innerHTML=tests.map(test=>`<div class="test-card"><div class="test-info"><h3>${escapeHtml(test.title)}</h3><p>Вопросов: ${test.questions?.length||0} | Время: ${test.timeLimitMinutes||60} мин</p></div><div class="test-actions"><button class="btn btn-outline edit-questions-btn" data-id="${test.id}">Редактировать вопросы</button><button class="btn btn-outline manage-test-btn" data-id="${test.id}">Управление</button><button class="btn btn-danger delete-test-btn" data-id="${test.id}">Удалить</button></div></div>`).join('');
+        document.querySelectorAll('.edit-questions-btn').forEach(btn=>btn.addEventListener('click',()=>location.href=`questions.html?testId=${encodeURIComponent(btn.dataset.id)}`));
+        document.querySelectorAll('.manage-test-btn').forEach(btn=>btn.addEventListener('click',()=>location.href=`manage-test.html?testId=${encodeURIComponent(btn.dataset.id)}`));
+        document.querySelectorAll('.delete-test-btn').forEach(btn=>btn.addEventListener('click',async()=>{if(confirm('Удалить тест?')){let tests2=await fetchTests();tests2=tests2.filter(t=>t.id!==btn.dataset.id);await saveTests(tests2);renderTestsList();}}));
     }
-    function escapeHtml(s){ if(!s) return ''; return s.replace(/[&<>]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[m])); }
+    function escapeHtml(s){if(!s)return '';return s.replace(/[&<>]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[m]));}
     document.getElementById('createTestBtn').addEventListener('click',async()=>{
-        const newId='test_'+Date.now()+'_'+Math.random().toString(36).substr(2,6);
-        const newTest={ id:newId, title:'Новый тест', createdAt:new Date().toISOString(), timeLimitMinutes:60, students:[], results:[], questions:[], showCorrectAnswersAfterTest:false };
-        let tests=await fetchTests(); tests.push(newTest); await saveTests(tests); window.location.href=`questions.html?testId=${newId}`;
+        const newId='test_'+Date.now()+'_'+Math.floor(Math.random()*1000);
+        const newTest={id:newId,title:"Новый тест",createdAt:new Date().toISOString(),timeLimitMinutes:60,students:[],results:[],questions:[],showCorrectAnswersAfterTest:false};
+        let tests=await fetchTests();tests.push(newTest);await saveTests(tests);renderTestsList();location.href=`questions.html?testId=${encodeURIComponent(newId)}`;
     });
-    document.getElementById('manageUsersBtn').addEventListener('click',()=>window.location.href='users.html');
-    document.getElementById('manageTasksBaseBtn').addEventListener('click',()=>window.location.href='tasks-base.html');
+    document.getElementById('manageUsersBtn').addEventListener('click',()=>location.href='users.html');
+    document.getElementById('manageTasksBaseBtn').addEventListener('click',()=>location.href='tasks-base.html');
     renderTestsList();
 </script>
 </body>
