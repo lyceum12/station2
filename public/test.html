@@ -1,7 +1,9 @@
 <!DOCTYPE html>
 <html lang="ru">
 <head>
-    <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no"><title>Станция тестирования</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Станция тестирования</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <style>
         *{margin:0;padding:0;box-sizing:border-box;user-select:none;}
@@ -44,152 +46,218 @@
 </head>
 <body><div class="app-window" id="appWindow"></div></body>
 <script>
-    let currentSessionId=null, currentTest=null, questionsOrder=[], currentIndex=0, timerInterval=null, finished=false, sessionAnswers={};
-    async function fetchJson(url, options) { const res = await fetch(url, options); if (!res.ok) throw new Error(await res.text()); return res.json(); }
-    async function startSession(testId, regNumber, studentName){
-        let sessions=await fetchJson('/api/sessions',{method:'GET'});
-        const tests=await fetchJson('/api/tests',{method:'GET'});
-        const test=tests.find(t=>t.id===testId);
-        if(!test) throw new Error('Тест не найден');
-        const questions=test.questions||[];
-        const shuffledIds=[...questions].sort(()=>Math.random()-0.5).map(q=>q.id);
-        const endTime=Date.now()+(test.timeLimitMinutes||60)*60*1000;
-        const sessionId='sess_'+Date.now()+'_'+Math.random().toString(36).substr(2,8);
-        const session={id:sessionId,testId,studentRegNumber:regNumber,studentName,startTime:Date.now(),endTimestamp:endTime,questionsOrder:shuffledIds,currentIndex:0,answers:{}};
-        sessions.push(session);
-        await fetchJson('/api/sessions',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(sessions)});
-        return {sessionId,endTimestamp:endTime,questionsOrder:shuffledIds};
+    let currentSessionId = null, currentTest = null, questionsOrder = [], currentIndex = 0, timerInterval = null, finished = false, sessionAnswers = {};
+
+    async function fetchJson(url, options = {}) {
+        const response = await fetch(url, {
+            ...options,
+            credentials: 'include',
+            headers: {
+                'Content-Type': 'application/json',
+                ...(options.headers || {})
+            }
+        });
+        if (!response.ok) throw new Error(await response.text());
+        return response.json();
     }
-    async function loadSession(){
-        const sid=localStorage.getItem('quiz_session_id');
-        if(!sid) return null;
-        const sessions=await fetchJson('/api/sessions',{method:'GET'});
-        const session=sessions.find(s=>s.id===sid);
-        if(!session){localStorage.removeItem('quiz_session_id');return null;}
+
+    async function getTests() { return fetchJson('/api/tests', { method: 'GET' }); }
+    async function getSessions() { return fetchJson('/api/sessions', { method: 'GET' }); }
+    async function saveSessions(sessions) { await fetchJson('/api/sessions', { method: 'POST', body: JSON.stringify(sessions) }); }
+
+    async function startSession(testId, regNumber, studentName) {
+        let sessions = await getSessions();
+        const tests = await getTests();
+        const test = tests.find(t => t.id === testId);
+        if (!test) throw new Error('Тест не найден');
+        const questions = test.questions || [];
+        const shuffledIds = [...questions].sort(() => Math.random() - 0.5).map(q => q.id);
+        const endTime = Date.now() + (test.timeLimitMinutes || 60) * 60 * 1000;
+        const sessionId = 'sess_' + Date.now() + '_' + Math.random().toString(36).substr(2, 8);
+        const session = {
+            id: sessionId,
+            testId,
+            studentRegNumber: regNumber,
+            studentName,
+            startTime: Date.now(),
+            endTimestamp: endTime,
+            questionsOrder: shuffledIds,
+            currentIndex: 0,
+            answers: {}
+        };
+        sessions.push(session);
+        await saveSessions(sessions);
+        return { sessionId, endTimestamp: endTime, questionsOrder: shuffledIds };
+    }
+
+    async function loadSession() {
+        const sid = localStorage.getItem('quiz_session_id');
+        if (!sid) return null;
+        const sessions = await getSessions();
+        const session = sessions.find(s => s.id === sid);
+        if (!session) { localStorage.removeItem('quiz_session_id'); return null; }
         return session;
     }
-    async function updateSession(answers, idx){
-        if(!currentSessionId) return;
-        let sessions=await fetchJson('/api/sessions',{method:'GET'});
-        const sIdx=sessions.findIndex(s=>s.id===currentSessionId);
-        if(sIdx!==-1){
-            if(answers) sessions[sIdx].answers={...sessions[sIdx].answers,...answers};
-            if(idx!==undefined) sessions[sIdx].currentIndex=idx;
-            await fetchJson('/api/sessions',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(sessions)});
+
+    async function updateSession(answers, idx) {
+        if (!currentSessionId) return;
+        let sessions = await getSessions();
+        const sIdx = sessions.findIndex(s => s.id === currentSessionId);
+        if (sIdx !== -1) {
+            if (answers) sessions[sIdx].answers = { ...sessions[sIdx].answers, ...answers };
+            if (idx !== undefined) sessions[sIdx].currentIndex = idx;
+            await saveSessions(sessions);
         }
     }
-    async function finishSession(){
-        if(!currentSessionId) return;
-        let sessions=await fetchJson('/api/sessions',{method:'GET'});
-        sessions=sessions.filter(s=>s.id!==currentSessionId);
-        await fetchJson('/api/sessions',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(sessions)});
+
+    async function finishSession() {
+        if (!currentSessionId) return;
+        let sessions = await getSessions();
+        sessions = sessions.filter(s => s.id !== currentSessionId);
+        await saveSessions(sessions);
         localStorage.removeItem('quiz_session_id');
     }
-    async function init(){
-        const session=await loadSession();
-        if(session){
-            const tests=await fetchJson('/api/tests',{method:'GET'});
-            currentTest=tests.find(t=>t.id===session.testId);
-            if(!currentTest){localStorage.removeItem('quiz_session_id');showLogin();return;}
-            questionsOrder=session.questionsOrder;
-            currentIndex=session.currentIndex;
-            currentSessionId=session.id;
-            sessionAnswers=session.answers||{};
-            buildUI();
-            startTimer(session.endTimestamp);
-            await renderCurrentQuestion();
-            renderNav();
-            updateCounter();
-        }else showLogin();
+
+    async function init() {
+        try {
+            const session = await loadSession();
+            if (session) {
+                const tests = await getTests();
+                currentTest = tests.find(t => t.id === session.testId);
+                if (!currentTest) { localStorage.removeItem('quiz_session_id'); showLogin(); return; }
+                questionsOrder = session.questionsOrder;
+                currentIndex = session.currentIndex;
+                currentSessionId = session.id;
+                sessionAnswers = session.answers || {};
+                buildUI();
+                startTimer(session.endTimestamp);
+                await renderCurrentQuestion();
+                renderNav();
+                updateCounter();
+            } else {
+                showLogin();
+            }
+        } catch (e) { console.error(e); showLogin(); }
     }
-    function showLogin(){
-        document.getElementById('appWindow').innerHTML=`<div class="login-overlay"><div class="login-card"><h2>Вход в тестирование</h2><p>Введите код участника</p><input type="text" id="regCode" placeholder="Код участника"><button id="loginBtn" style="background:#1E325A;color:white;padding:0.6rem 2rem;border:none;border-radius:40px;">Войти</button><div id="loginError" class="error-msg"></div></div></div>`;
-        document.getElementById('loginBtn').onclick=async()=>{
-            const code=document.getElementById('regCode').value.trim();
-            if(!code){document.getElementById('loginError').innerText='Введите код';return;}
-            const tests=await fetchJson('/api/tests',{method:'GET'});
-            let foundTest=null, foundStudent=null;
-            for(let t of tests){const s=(t.students||[]).find(st=>st.registrationNumber===code);if(s){foundTest=t;foundStudent=s;break;}}
-            if(!foundTest){document.getElementById('loginError').innerText='Код не найден';return;}
-            try{
-                const data=await startSession(foundTest.id,code,foundStudent.fullName);
-                currentTest=foundTest;
-                questionsOrder=data.questionsOrder;
-                currentIndex=0;
-                currentSessionId=data.sessionId;
-                sessionAnswers={};
-                localStorage.setItem('quiz_session_id',currentSessionId);
-                localStorage.setItem('quiz_session_student_reg',code);
-                localStorage.setItem('quiz_session_student_name',foundStudent.fullName);
+
+    function showLogin() {
+        const app = document.getElementById('appWindow');
+        app.innerHTML = `
+            <div class="login-overlay" id="loginOverlay">
+                <div class="login-card">
+                    <h2>Вход в тестирование</h2>
+                    <p>Введите код участника</p>
+                    <input type="text" id="regCode" placeholder="Код участника" autocomplete="off">
+                    <button id="loginBtn" style="background:#1E325A;color:white;padding:0.6rem 2rem;border:none;border-radius:40px;">Войти</button>
+                    <div id="loginError" class="error-msg"></div>
+                </div>
+            </div>
+        `;
+        document.getElementById('loginBtn').onclick = async () => {
+            const code = document.getElementById('regCode').value.trim();
+            if (!code) { document.getElementById('loginError').innerText = 'Введите код'; return; }
+            const tests = await getTests();
+            let foundTest = null, foundStudent = null;
+            for (let t of tests) {
+                const s = (t.students || []).find(st => st.registrationNumber === code);
+                if (s) { foundTest = t; foundStudent = s; break; }
+            }
+            if (!foundTest) { document.getElementById('loginError').innerText = 'Код не найден'; return; }
+            try {
+                const data = await startSession(foundTest.id, code, foundStudent.fullName);
+                currentTest = foundTest;
+                questionsOrder = data.questionsOrder;
+                currentIndex = 0;
+                currentSessionId = data.sessionId;
+                sessionAnswers = {};
+                localStorage.setItem('quiz_session_id', currentSessionId);
+                localStorage.setItem('quiz_session_student_reg', code);
+                localStorage.setItem('quiz_session_student_name', foundStudent.fullName);
                 buildUI();
                 startTimer(data.endTimestamp);
                 await renderCurrentQuestion();
                 renderNav();
                 updateCounter();
-            }catch(e){document.getElementById('loginError').innerText=e.message;}
+            } catch (e) { document.getElementById('loginError').innerText = e.message; }
         };
     }
-    function buildUI(){
-        const app=document.getElementById('appWindow');
-        app.innerHTML=`
-            <div class="top-bar"><div class="timer-box"><div class="timer-icon">⏱️</div><div class="timer" id="timerDisplay">--:--</div></div><div class="kim-info">${escapeHtml(currentTest.title)}</div><div style="margin-left:auto;display:flex;gap:12px;"><button id="prevBtn" style="background:#E2E8F0;border:none;padding:8px;border-radius:50%;"><svg width="24" height="24" fill="#6d899f" viewBox="0 0 16 16"><path d="M16 14a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2V2a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2zm-4.5-6.5H5.707l2.147-2.146a.5.5 0 1 0-.708-.708l-3 3a.5.5 0 0 0 0 .708l3 3a.5.5 0 0 0 .708-.708L5.707 8.5H11.5a.5.5 0 0 0 0-1"/></svg></button><button id="nextBtn" style="background:#E2E8F0;border:none;padding:8px;border-radius:50%;"><svg width="24" height="24" fill="#6d899f" viewBox="0 0 16 16"><path d="M0 14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V2a2 2 0 0 0-2-2H2a2 2 0 0 0-2 2zm4.5-6.5h5.793L8.146 5.354a.5.5 0 1 1 .708-.708l3 3a.5.5 0 0 1 0 .708l-3 3a.5.5 0 0 1-.708-.708L10.293 8.5H4.5a.5.5 0 0 1 0-1"/></svg></button></div><div class="top-actions"><button class="finish-btn" id="finishBtn">Завершить тестирование</button></div></div>
-            <div class="stats-panel"><span class="stats-label">Дано ответов:</span><span class="stats-count" id="answerCounter">0/${questionsOrder.length}</span><div class="questions-nav" id="questionsNav"><div class="buttons-wrapper" id="buttonsContainer"></div></div><div style="position:absolute;right:90px;top:-12px;"><button id="zoomInBtn" style="background:none;border:none;"><svg width="36" height="36" fill="currentColor" viewBox="0 0 16 16"><path fill-rule="evenodd" d="M6.5 12a5.5 5.5 0 1 0 0-11 5.5 5.5 0 0 0 0 11M13 6.5a6.5 6.5 0 1 1-13 0 6.5 6.5 0 0 1 13 0"/><path d="M10.344 11.742q.044.06.098.115l3.85 3.85a1 1 0 0 0 1.415-1.414l-3.85-3.85a1 1 0 0 0-.115-.1 6.5 6.5 0 0 1-1.398 1.4z"/><path fill-rule="evenodd" d="M6.5 3a.5.5 0 0 1 .5.5V6h2.5a.5.5 0 0 1 0 1H7v2.5a.5.5 0 0 1-1 0V7H3.5a.5.5 0 0 1 0-1H6V3.5a.5.5 0 0 1 .5-.5"/></svg></button><button id="zoomOutBtn" style="background:none;border:none;"><svg width="36" height="36" fill="currentColor" viewBox="0 0 16 16"><path fill-rule="evenodd" d="M6.5 12a5.5 5.5 0 1 0 0-11 5.5 5.5 0 0 0 0 11M13 6.5a6.5 6.5 0 1 1-13 0 6.5 6.5 0 0 1 13 0"/><path d="M10.344 11.742q.044.06.098.115l3.85 3.85a1 1 0 0 0 1.415-1.414l-3.85-3.85a1 1 0 0 0-.115-.1 6.5 6.5 0 0 1-1.398 1.4z"/><path fill-rule="evenodd" d="M3 6.5a.5.5 0 0 1 .5-.5h6a.5.5 0 0 1 0 1h-6a.5.5 0 0 1-.5-.5"/></svg></button></div></div>
+
+    function buildUI() {
+        const app = document.getElementById('appWindow');
+        app.innerHTML = `
+            <div class="top-bar">
+                <div class="timer-box"><div class="timer-icon">⏱️</div><div class="timer" id="timerDisplay">--:--</div></div>
+                <div class="kim-info">${escapeHtml(currentTest.title)}</div>
+                <div style="margin-left:auto;display:flex;gap:12px;">
+                    <button id="prevBtn" style="background:#E2E8F0;border:none;padding:8px;border-radius:50%;"><svg width="24" height="24" fill="#6d899f" viewBox="0 0 16 16"><path d="M16 14a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2V2a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2zm-4.5-6.5H5.707l2.147-2.146a.5.5 0 1 0-.708-.708l-3 3a.5.5 0 0 0 0 .708l3 3a.5.5 0 0 0 .708-.708L5.707 8.5H11.5a.5.5 0 0 0 0-1"/></svg></button>
+                    <button id="nextBtn" style="background:#E2E8F0;border:none;padding:8px;border-radius:50%;"><svg width="24" height="24" fill="#6d899f" viewBox="0 0 16 16"><path d="M0 14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V2a2 2 0 0 0-2-2H2a2 2 0 0 0-2 2zm4.5-6.5h5.793L8.146 5.354a.5.5 0 1 1 .708-.708l3 3a.5.5 0 0 1 0 .708l-3 3a.5.5 0 0 1-.708-.708L10.293 8.5H4.5a.5.5 0 0 1 0-1"/></svg></button>
+                </div>
+                <div class="top-actions"><button class="finish-btn" id="finishBtn">Завершить тестирование</button></div>
+            </div>
+            <div class="stats-panel">
+                <span class="stats-label">Дано ответов:</span><span class="stats-count" id="answerCounter">0/${questionsOrder.length}</span>
+                <div class="questions-nav" id="questionsNav"><div class="buttons-wrapper" id="buttonsContainer"></div></div>
+                <div style="position:absolute;right:90px;top:-12px;"><button id="zoomInBtn" style="background:none;border:none;"><svg width="36" height="36" fill="currentColor" viewBox="0 0 16 16"><path fill-rule="evenodd" d="M6.5 12a5.5 5.5 0 1 0 0-11 5.5 5.5 0 0 0 0 11M13 6.5a6.5 6.5 0 1 1-13 0 6.5 6.5 0 0 1 13 0"/><path d="M10.344 11.742q.044.06.098.115l3.85 3.85a1 1 0 0 0 1.415-1.414l-3.85-3.85a1 1 0 0 0-.115-.1 6.5 6.5 0 0 1-1.398 1.4z"/><path fill-rule="evenodd" d="M6.5 3a.5.5 0 0 1 .5.5V6h2.5a.5.5 0 0 1 0 1H7v2.5a.5.5 0 0 1-1 0V7H3.5a.5.5 0 0 1 0-1H6V3.5a.5.5 0 0 1 .5-.5"/></svg></button><button id="zoomOutBtn" style="background:none;border:none;"><svg width="36" height="36" fill="currentColor" viewBox="0 0 16 16"><path fill-rule="evenodd" d="M6.5 12a5.5 5.5 0 1 0 0-11 5.5 5.5 0 0 0 0 11M13 6.5a6.5 6.5 0 1 1-13 0 6.5 6.5 0 0 1 13 0"/><path d="M10.344 11.742q.044.06.098.115l3.85 3.85a1 1 0 0 0 1.415-1.414l-3.85-3.85a1 1 0 0 0-.115-.1 6.5 6.5 0 0 1-1.398 1.4z"/><path fill-rule="evenodd" d="M3 6.5a.5.5 0 0 1 .5-.5h6a.5.5 0 0 1 0 1h-6a.5.5 0 0 1-.5-.5"/></svg></button></div>
+            </div>
             <div class="content-area"><div id="questionContent" class="question-html"></div></div>
             <div class="file-bar" id="fileBar"></div>
             <div class="answer-area"><textarea id="answerInput" class="answer-textbox" placeholder="Введите ответ..."></textarea></div>
         `;
-        document.getElementById('prevBtn').onclick=()=>changeQuestion(-1);
-        document.getElementById('nextBtn').onclick=()=>changeQuestion(1);
-        document.getElementById('finishBtn').onclick=()=>finish(false);
-        document.getElementById('zoomInBtn').onclick=()=>changeFontSize(1);
-        document.getElementById('zoomOutBtn').onclick=()=>changeFontSize(-1);
-        document.getElementById('answerInput').oninput=saveCurrentAnswer;
-        window.zoomTarget=document.getElementById('questionContent');
+        document.getElementById('prevBtn').onclick = () => changeQuestion(-1);
+        document.getElementById('nextBtn').onclick = () => changeQuestion(1);
+        document.getElementById('finishBtn').onclick = () => finish(false);
+        document.getElementById('zoomInBtn').onclick = () => changeFontSize(1);
+        document.getElementById('zoomOutBtn').onclick = () => changeFontSize(-1);
+        document.getElementById('answerInput').oninput = saveCurrentAnswer;
+        window.zoomTarget = document.getElementById('questionContent');
     }
-    async function saveCurrentAnswer(){
-        const qid=questionsOrder[currentIndex];
-        const text=document.getElementById('answerInput').value;
-        if(!sessionAnswers[qid]) sessionAnswers[qid]={text:'',files:[]};
-        sessionAnswers[qid].text=text;
-        await updateSession({[qid]:sessionAnswers[qid]}, currentIndex);
+
+    async function saveCurrentAnswer() {
+        const qid = questionsOrder[currentIndex];
+        const text = document.getElementById('answerInput').value;
+        if (!sessionAnswers[qid]) sessionAnswers[qid] = { text: '', files: [] };
+        sessionAnswers[qid].text = text;
+        await updateSession({ [qid]: sessionAnswers[qid] }, currentIndex);
         renderNav();
         updateCounter();
     }
-    async function renderCurrentQuestion(){
-        const qid=questionsOrder[currentIndex];
-        const q=currentTest.questions.find(qq=>qq.id===qid);
-        if(!q) return;
-        let html='';
-        if(q.editorData?.blocks){
-            for(let b of q.editorData.blocks){
-                if(b.type==='paragraph') html+=`<p>${b.data.text}</p>`;
-                else if(b.type==='header') html+=`<h${b.data.level}>${b.data.text}</h${b.data.level}>`;
-                else if(b.type==='list'){const tag=b.data.style==='ordered'?'ol':'ul';html+=`<${tag}>`;for(let i of b.data.items)html+=`<li>${i}</li>`;html+=`</${tag}>`;}
-                else if(b.type==='image') html+=`<img src="${b.data.file.url}" alt="${b.data.caption||''}">`;
-                else html+=`<div>${JSON.stringify(b.data)}</div>`;
+
+    async function renderCurrentQuestion() {
+        const qid = questionsOrder[currentIndex];
+        const q = currentTest.questions.find(qq => qq.id === qid);
+        if (!q) return;
+        let html = '';
+        if (q.editorData && q.editorData.blocks) {
+            for (let b of q.editorData.blocks) {
+                if (b.type === 'paragraph') html += `<p>${b.data.text}</p>`;
+                else if (b.type === 'header') html += `<h${b.data.level}>${b.data.text}</h${b.data.level}>`;
+                else if (b.type === 'list') { const tag = b.data.style === 'ordered' ? 'ol' : 'ul'; html += `<${tag}>`; for (let i of b.data.items) html += `<li>${i}</li>`; html += `</${tag}>`; }
+                else if (b.type === 'image') html += `<img src="${b.data.file.url}" alt="${b.data.caption || ''}">`;
+                else html += `<div>${JSON.stringify(b.data)}</div>`;
             }
-        } else html='<p>Нет содержимого</p>';
-        document.getElementById('questionContent').innerHTML=html;
-        const ans=sessionAnswers[qid]||{text:'',files:[]};
-        document.getElementById('answerInput').value=ans.text;
+        } else html = '<p>Нет содержимого вопроса</p>';
+        document.getElementById('questionContent').innerHTML = html;
+        const ans = sessionAnswers[qid] || { text: '', files: [] };
+        document.getElementById('answerInput').value = ans.text;
         renderFileBar(q);
     }
-    async function renderFileBar(q){
-        const bar=document.getElementById('fileBar');
-        if(q.requireFileAttachment){
-            bar.innerHTML=`<div><button id="attachFileBtn" class="file-action-btn">Прикрепить файл</button></div><div id="fileList"></div>`;
-            document.getElementById('attachFileBtn').onclick=()=>{
-                const input=document.createElement('input');input.type='file';
-                input.onchange=async e=>{
-                    const file=e.target.files[0];
-                    if(file){
-                        const reader=new FileReader();
-                        reader.onload=async ev=>{
-                            const dataURL=ev.target.result;
-                            const qid=questionsOrder[currentIndex];
-                            if(!sessionAnswers[qid]) sessionAnswers[qid]={text:'',files:[]};
-                            sessionAnswers[qid].files.push({name:file.name,type:file.type,dataURL});
-                            await updateSession({[qid]:sessionAnswers[qid]}, currentIndex);
+
+    async function renderFileBar(q) {
+        const bar = document.getElementById('fileBar');
+        if (q.requireFileAttachment) {
+            bar.innerHTML = `<div><button id="attachFileBtn" class="file-action-btn">Прикрепить файл</button></div><div id="fileList"></div>`;
+            document.getElementById('attachFileBtn').onclick = () => {
+                const input = document.createElement('input'); input.type = 'file';
+                input.onchange = async e => {
+                    const file = e.target.files[0];
+                    if (file) {
+                        const reader = new FileReader();
+                        reader.onload = async ev => {
+                            const dataURL = ev.target.result;
+                            const qid = questionsOrder[currentIndex];
+                            if (!sessionAnswers[qid]) sessionAnswers[qid] = { text: '', files: [] };
+                            sessionAnswers[qid].files.push({ name: file.name, type: file.type, dataURL });
+                            await updateSession({ [qid]: sessionAnswers[qid] }, currentIndex);
                             renderFileBar(q);
                         };
                         reader.readAsDataURL(file);
@@ -197,116 +265,131 @@
                 };
                 input.click();
             };
-            const files=sessionAnswers[questionsOrder[currentIndex]]?.files||[];
-            const fl=document.getElementById('fileList');
-            if(files.length) fl.innerHTML=files.map((f,idx)=>`<div class="file-item">${escapeHtml(f.name)} <button data-idx="${idx}" class="remove-file" style="background:none;border:none;">❌</button></div>`).join('');
-            else fl.innerHTML='<span>Нет файлов</span>';
-            document.querySelectorAll('.remove-file').forEach(btn=>btn.onclick=async()=>{
-                const idx=parseInt(btn.dataset.idx);
-                const qid=questionsOrder[currentIndex];
-                sessionAnswers[qid].files.splice(idx,1);
-                await updateSession({[qid]:sessionAnswers[qid]}, currentIndex);
+            const files = sessionAnswers[questionsOrder[currentIndex]]?.files || [];
+            const fl = document.getElementById('fileList');
+            if (files.length) fl.innerHTML = files.map((f, idx) => `<div class="file-item">${escapeHtml(f.name)} <button data-idx="${idx}" class="remove-file" style="background:none;border:none;">❌</button></div>`).join('');
+            else fl.innerHTML = '<span>Нет файлов</span>';
+            document.querySelectorAll('.remove-file').forEach(btn => btn.onclick = async () => {
+                const idx = parseInt(btn.dataset.idx);
+                const qid = questionsOrder[currentIndex];
+                sessionAnswers[qid].files.splice(idx, 1);
+                await updateSession({ [qid]: sessionAnswers[qid] }, currentIndex);
                 renderFileBar(q);
             });
-        } else bar.innerHTML='<div style="color:white;padding:8px;">Файлы не требуются</div>';
+        } else bar.innerHTML = '<div style="color:white;padding:8px;">Файлы не требуются</div>';
     }
-    function renderNav(){
-        const container=document.getElementById('buttonsContainer');
-        let html='';
-        for(let i=0;i<questionsOrder.length;i++){
-            const qid=questionsOrder[i];
-            const answered=sessionAnswers[qid] && (sessionAnswers[qid].text.trim()!=='' || (sessionAnswers[qid].files?.length));
-            html+=`<button class="q-btn ${i===currentIndex?'current':''} ${answered?'answered':''}" data-idx="${i}">${i+1}</button>`;
+
+    function renderNav() {
+        const container = document.getElementById('buttonsContainer');
+        let html = '';
+        for (let i = 0; i < questionsOrder.length; i++) {
+            const qid = questionsOrder[i];
+            const answered = sessionAnswers[qid] && (sessionAnswers[qid].text.trim() !== '' || (sessionAnswers[qid].files?.length));
+            html += `<button class="q-btn ${i === currentIndex ? 'current' : ''} ${answered ? 'answered' : ''}" data-idx="${i}">${i + 1}</button>`;
         }
-        container.innerHTML=html;
-        document.querySelectorAll('.q-btn').forEach(btn=>btn.onclick=()=>{saveCurrentAnswer();currentIndex=parseInt(btn.dataset.idx);renderCurrentQuestion();renderNav();updateCounter();});
+        container.innerHTML = html;
+        document.querySelectorAll('.q-btn').forEach(btn => btn.onclick = () => { saveCurrentAnswer(); currentIndex = parseInt(btn.dataset.idx); renderCurrentQuestion(); renderNav(); updateCounter(); });
     }
-    function updateCounter(){
-        let cnt=0;
-        for(let qid of questionsOrder) if(sessionAnswers[qid] && (sessionAnswers[qid].text.trim()!=='' || sessionAnswers[qid].files?.length)) cnt++;
-        document.getElementById('answerCounter').innerText=`${cnt}/${questionsOrder.length}`;
+
+    function updateCounter() {
+        let cnt = 0;
+        for (let qid of questionsOrder) if (sessionAnswers[qid] && (sessionAnswers[qid].text.trim() !== '' || (sessionAnswers[qid].files?.length))) cnt++;
+        document.getElementById('answerCounter').innerText = `${cnt}/${questionsOrder.length}`;
     }
-    function changeQuestion(delta){
+
+    function changeQuestion(delta) {
         saveCurrentAnswer();
-        const ni=currentIndex+delta;
-        if(ni>=0 && ni<questionsOrder.length){currentIndex=ni;renderCurrentQuestion();renderNav();updateCounter();}
+        const ni = currentIndex + delta;
+        if (ni >= 0 && ni < questionsOrder.length) { currentIndex = ni; renderCurrentQuestion(); renderNav(); updateCounter(); }
     }
-    function changeFontSize(delta){
-        const cur=parseFloat(getComputedStyle(window.zoomTarget).fontSize);
-        let n=cur+delta;
-        if(n<10)n=10;if(n>32)n=32;
-        window.zoomTarget.style.fontSize=n+'px';
+
+    function changeFontSize(delta) {
+        const cur = parseFloat(getComputedStyle(window.zoomTarget).fontSize);
+        let n = cur + delta;
+        if (n < 10) n = 10; if (n > 32) n = 32;
+        window.zoomTarget.style.fontSize = n + 'px';
     }
-    function startTimer(endTime){
-        if(timerInterval) clearInterval(timerInterval);
-        const update=()=>{
-            const rem=Math.max(0,endTime-Date.now());
-            const m=Math.floor(rem/60000), s=Math.floor((rem%60000)/1000);
-            document.getElementById('timerDisplay').innerText=`${m.toString().padStart(2,'0')}:${s.toString().padStart(2,'0')}`;
-            if(rem<=0){clearInterval(timerInterval);finish(true);}
+
+    function startTimer(endTime) {
+        if (timerInterval) clearInterval(timerInterval);
+        const update = () => {
+            const rem = Math.max(0, endTime - Date.now());
+            const m = Math.floor(rem / 60000), s = Math.floor((rem % 60000) / 1000);
+            document.getElementById('timerDisplay').innerText = `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+            if (rem <= 0) { clearInterval(timerInterval); finish(true); }
         };
         update();
-        timerInterval=setInterval(update,1000);
+        timerInterval = setInterval(update, 1000);
     }
-    async function finish(forced){
-        if(finished) return;
-        if(timerInterval) clearInterval(timerInterval);
+
+    async function finish(forced) {
+        if (finished) return;
+        if (timerInterval) clearInterval(timerInterval);
         await saveCurrentAnswer();
-        let tests=await fetchJson('/api/tests',{method:'GET'});
-        const testIdx=tests.findIndex(t=>t.id===currentTest.id);
-        if(testIdx!==-1){
-            const answersArray=[];
-            for(let qid of questionsOrder){
-                const ans=sessionAnswers[qid]||{text:'',files:[]};
-                answersArray.push({questionId:qid,answerText:ans.text,files:ans.files});
+
+        let tests = await getTests();
+        const testIdx = tests.findIndex(t => t.id === currentTest.id);
+        if (testIdx !== -1) {
+            const answersArray = [];
+            for (let qid of questionsOrder) {
+                const ans = sessionAnswers[qid] || { text: '', files: [] };
+                answersArray.push({ questionId: qid, answerText: ans.text, files: ans.files });
             }
-            const result={studentRegNumber:localStorage.getItem('quiz_session_student_reg')||'',studentName:localStorage.getItem('quiz_session_student_name')||'',finishedAt:Date.now(),answers:answersArray};
-            if(!tests[testIdx].results) tests[testIdx].results=[];
+            const result = {
+                studentRegNumber: localStorage.getItem('quiz_session_student_reg') || '',
+                studentName: localStorage.getItem('quiz_session_student_name') || '',
+                finishedAt: Date.now(),
+                answers: answersArray
+            };
+            if (!tests[testIdx].results) tests[testIdx].results = [];
             tests[testIdx].results.push(result);
-            await fetchJson('/api/tests',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(tests)});
+            await fetchJson('/api/tests', { method: 'POST', body: JSON.stringify(tests) });
         }
         await finishSession();
-        finished=true;
-        const resultsPage=await buildResultsPage();
-        document.getElementById('appWindow').innerHTML=resultsPage;
-        document.getElementById('restartBtn')?.addEventListener('click',()=>location.reload());
+        finished = true;
+        const resultsPage = await buildResultsPage();
+        document.getElementById('appWindow').innerHTML = resultsPage;
+        document.getElementById('restartBtn')?.addEventListener('click', () => location.reload());
     }
-    async function buildResultsPage(){
-        const showDetails=currentTest.showCorrectAnswersAfterTest||false;
-        const questions=currentTest.questions||[];
-        let correctCount=0, details=[];
-        for(let i=0;i<questions.length;i++){
-            const q=questions[i];
-            const userAns=sessionAnswers[q.id];
-            const userText=userAns?.text||'(нет ответа)';
-            let correctIndices=q.correctIndices||q.answers?.reduce((arr,a,idx)=>{if(a.isCorrect)arr.push(idx);return arr},[]);
-            const correctOpts=(q.answerOptions||[]).filter((_,idx)=>correctIndices.includes(idx)).join(', ');
-            let isCorrect=false;
-            if(userAns){
-                const opts=q.answerOptions||[];
-                const userLow=userAns.text.trim().toLowerCase();
-                const sel=[];
-                for(let j=0;j<opts.length;j++) if(opts[j].toLowerCase()===userLow) sel.push(j);
-                isCorrect=sel.length===correctIndices.length && sel.every(idx=>correctIndices.includes(idx));
+
+    async function buildResultsPage() {
+        const showDetails = currentTest.showCorrectAnswersAfterTest || false;
+        const questions = currentTest.questions || [];
+        let correctCount = 0, details = [];
+        for (let i = 0; i < questions.length; i++) {
+            const q = questions[i];
+            const userAns = sessionAnswers[q.id];
+            const userText = userAns ? userAns.text : '(нет ответа)';
+            let correctIndices = q.correctIndices || q.answers?.reduce((arr, a, idx) => { if (a.isCorrect) arr.push(idx); return arr; }, []);
+            const correctOpts = (q.answerOptions || []).filter((_, idx) => correctIndices.includes(idx)).join(', ');
+            let isCorrect = false;
+            if (userAns) {
+                const opts = q.answerOptions || [];
+                const userLow = userAns.text.trim().toLowerCase();
+                const sel = [];
+                for (let j = 0; j < opts.length; j++) if (opts[j].toLowerCase() === userLow) sel.push(j);
+                isCorrect = sel.length === correctIndices.length && sel.every(idx => correctIndices.includes(idx));
             }
-            if(isCorrect) correctCount++;
-            details.push({title:q.titleQuestion,userAnswer:userText,correctAnswer:correctOpts,isCorrect});
+            if (isCorrect) correctCount++;
+            details.push({ title: q.titleQuestion, userAnswer: userText, correctAnswer: correctOpts, isCorrect });
         }
-        const total=questions.length, percent=Math.round((correctCount/total)*100);
-        let html=`<div class="results-container"><h1>Результаты тестирования</h1><p><strong>Ученик:</strong> ${escapeHtml(currentTest.students?.find(s=>s.registrationNumber===localStorage.getItem('quiz_session_student_reg'))?.fullName||'')}</p><p><strong>Ваш результат:</strong> ${correctCount} из ${total} (${percent}%)</p><hr>`;
-        if(showDetails){
-            html+=`<h2>Разбор вопросов</h2>`;
-            for(let i=0;i<details.length;i++){
-                const d=details[i];
-                const cls=d.isCorrect?'result-correct':'result-incorrect';
-                const txt=d.isCorrect?'Верно':'Неверно';
-                html+=`<div class="result-card"><strong>Вопрос ${i+1}: ${escapeHtml(d.title)}</strong><br>Ваш ответ: ${escapeHtml(d.userAnswer)}<br>Правильный: ${escapeHtml(d.correctAnswer)}<br><span class="${cls}">${txt}</span></div>`;
+        const total = questions.length, percent = Math.round((correctCount / total) * 100);
+        let html = `<div class="results-container"><h1>Результаты тестирования</h1><p><strong>Ученик:</strong> ${escapeHtml(currentTest.students?.find(s => s.registrationNumber === localStorage.getItem('quiz_session_student_reg'))?.fullName || '')}</p><p><strong>Ваш результат:</strong> ${correctCount} из ${total} (${percent}%)</p><hr>`;
+        if (showDetails) {
+            html += `<h2>Разбор вопросов</h2>`;
+            for (let i = 0; i < details.length; i++) {
+                const d = details[i];
+                const cls = d.isCorrect ? 'result-correct' : 'result-incorrect';
+                const txt = d.isCorrect ? 'Верно' : 'Неверно';
+                html += `<div class="result-card"><strong>Вопрос ${i+1}: ${escapeHtml(d.title)}</strong><br>Ваш ответ: ${escapeHtml(d.userAnswer)}<br>Правильный ответ: ${escapeHtml(d.correctAnswer)}<br><span class="${cls}">${txt}</span></div>`;
             }
-        } else html+=`<p>Показ правильных ответов отключён учителем.</p>`;
-        html+=`<button id="restartBtn" style="margin-top:2rem;background:#3b82f6;color:white;border:none;padding:0.8rem 2rem;border-radius:40px;">Завершить</button></div>`;
+        } else html += `<p>Показ правильных ответов отключён учителем.</p>`;
+        html += `<button id="restartBtn" style="margin-top:2rem;background:#3b82f6;color:white;border:none;padding:0.8rem 2rem;border-radius:40px;">Завершить</button></div>`;
         return html;
     }
-    function escapeHtml(s){if(!s)return '';return s.replace(/[&<>]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[m]));}
+
+    function escapeHtml(s) { if (!s) return ''; return s.replace(/[&<>]/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[m])); }
+
     init();
 </script>
 </body>
