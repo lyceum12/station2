@@ -34,6 +34,9 @@
         .modal-content input{width:100%;padding:0.8rem;margin:1rem 0;border:1px solid #cbd5e1;border-radius:40px;}
         .task-item{border:1px solid #e2e8f0;border-radius:16px;padding:0.8rem;margin-bottom:0.8rem;cursor:pointer;}
         .task-item:hover{background:#f8fafc;}
+        .toast-message{position:fixed;bottom:20px;right:20px;color:white;padding:12px 20px;border-radius:40px;z-index:1000;}
+        .file-upload-label{background:#e2e8f0;padding:0.6rem 1.4rem;border-radius:40px;cursor:pointer;display:inline-flex;align-items:center;gap:8px;}
+        .file-upload-label:hover{background:#cbd5e1;}
     </style>
 </head>
 <body>
@@ -41,7 +44,12 @@
     <a href="index.html" class="back-link">← На главную</a>
     <div class="header-info">
         <div><div id="testTitleContainer"></div><div class="test-badge" id="testIdBadge"></div></div>
-        <div><button class="btn btn-outline" id="manageTestBtn">Управление тестом</button><button class="btn btn-outline" id="addFromBaseBtn">Добавить из базы</button><button class="btn btn-primary" id="createNewQuestionBtn">Создать вопрос</button></div>
+        <div>
+            <button class="btn btn-outline" id="manageTestBtn">Управление тестом</button>
+            <button class="btn btn-outline" id="addFromBaseBtn">Добавить из базы</button>
+            <label class="file-upload-label" id="uploadHtmlBtn">📄 Загрузить HTML<input type="file" id="htmlFileInput" accept=".html, .htm" style="display:none;"></label>
+            <button class="btn btn-primary" id="createNewQuestionBtn">Создать вопрос</button>
+        </div>
     </div>
     <div id="questionsListContainer" class="questions-grid"></div>
     <footer>Перетаскивайте вопросы для изменения порядка. Нажмите на номер вопроса, чтобы изменить его позицию.</footer>
@@ -51,6 +59,12 @@
 <script>
     let currentTestId=null, currentTest=null, isEditingTitle=false;
     let movingQuestionId = null;
+    async function checkAuth() {
+        const res = await fetch('/api/check-session');
+        const data = await res.json();
+        if (!data.authenticated) { window.location.href = 'index.html'; return false; }
+        return true;
+    }
     async function fetchTests(){const r=await fetch('/api/tests');return r.json();}
     async function saveTests(t){await fetch('/api/tests',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(t)});}
     async function loadTestFromUrl(){
@@ -86,7 +100,6 @@
         container.innerHTML=qs.map((q,idx)=>`<div class="question-card" data-qid="${q.id}"><div class="question-preview"><h3>${escapeHtml(q.titleQuestion||"Без заголовка")}</h3><div class="question-meta"><span>Вопрос #${idx+1}</span><span>Правильных ответов: ${(q.correctIndices?.length||q.answers?.filter(a=>a.isCorrect).length||0)}</span><span>${q.requireFileAttachment?'Требует файл':'Без файла'}</span></div></div><div><button class="btn btn-outline btn-sm edit-question" data-qid="${q.id}">Редактировать</button> <button class="btn btn-outline btn-sm change-number-btn" data-qid="${q.id}" data-current="${idx+1}">Номер</button> <button class="btn btn-danger btn-sm delete-question" data-qid="${q.id}">Удалить</button></div></div>`).join('');
         document.querySelectorAll('.edit-question').forEach(btn=>btn.addEventListener('click',()=>{const qid=btn.dataset.qid;location.href=`edit-question.html?testId=${currentTestId}&questionId=${qid}`;}));
         document.querySelectorAll('.delete-question').forEach(btn=>btn.addEventListener('click',async()=>{if(confirm('Удалить вопрос?')){let tests=await fetchTests();const idx=tests.findIndex(t=>t.id===currentTestId);if(idx!==-1){tests[idx].questions=tests[idx].questions.filter(q=>q.id!==btn.dataset.qid);await saveTests(tests);currentTest=tests[idx];renderQuestionsList();showToast("Вопрос удалён");}}}));
-        // Кнопки изменения номера
         document.querySelectorAll('.change-number-btn').forEach(btn=>btn.addEventListener('click',(e)=>{
             e.stopPropagation();
             movingQuestionId = btn.dataset.qid;
@@ -94,7 +107,6 @@
             document.getElementById('newNumberInput').value = btn.dataset.current;
             document.getElementById('changeNumberModal').style.display = 'flex';
         }));
-        // Drag & drop сортировка
         new Sortable(container, {
             animation:150,
             onEnd:async function(){
@@ -130,10 +142,86 @@
         renderQuestionsList();
         showToast(`Вопрос перемещён на позицию ${newPosition}`);
     }
-    function showToast(msg,isError=false){const t=document.createElement('div');t.className='toast-message';t.style.cssText='position:fixed;bottom:20px;right:20px;background:'+(isError?'#ef4444':'#10b981')+';color:white;padding:12px 20px;border-radius:40px;z-index:1000';t.textContent=msg;document.body.appendChild(t);setTimeout(()=>t.remove(),3000);}
+    // Импорт из HTML файла
+    async function importQuestionFromHTML(file) {
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = async function(e) {
+                const htmlContent = e.target.result;
+                const parser = new DOMParser();
+                const doc = parser.parseFromString(htmlContent, 'text/html');
+                // Извлекаем заголовок (первый h1 или title)
+                let title = '';
+                const h1 = doc.querySelector('h1');
+                if (h1) title = h1.innerText.trim();
+                if (!title) {
+                    const titleTag = doc.querySelector('title');
+                    if (titleTag) title = titleTag.innerText.trim();
+                }
+                if (!title) title = 'Задание из HTML';
+                // Извлекаем содержимое body (очищаем от скриптов и стилей)
+                const body = doc.body.cloneNode(true);
+                // Удаляем скрипты и стили
+                body.querySelectorAll('script, style, link').forEach(el => el.remove());
+                // Получаем HTML содержимого
+                const bodyHtml = body.innerHTML.trim();
+                // Создаём структуру для Editor.js (простой параграф)
+                const editorData = {
+                    blocks: [
+                        {
+                            type: 'paragraph',
+                            data: { text: bodyHtml }
+                        }
+                    ]
+                };
+                // Создаём новый вопрос
+                const newQuestion = {
+                    id: 'q_' + Date.now() + '_' + Math.random().toString(36).substr(2, 6),
+                    titleQuestion: title,
+                    editorData: editorData,
+                    answers: [],
+                    answerOptions: [],
+                    correctIndices: [],
+                    requireFileAttachment: false,
+                    hasEditorContent: true
+                };
+                // Добавляем вопрос в тест
+                let tests = await fetchTests();
+                const testIdx = tests.findIndex(t => t.id === currentTestId);
+                if (testIdx !== -1) {
+                    if (!tests[testIdx].questions) tests[testIdx].questions = [];
+                    tests[testIdx].questions.push(newQuestion);
+                    await saveTests(tests);
+                    currentTest = tests[testIdx];
+                    renderQuestionsList();
+                    showToast(`Задание "${title}" добавлено из HTML`);
+                    resolve();
+                } else {
+                    reject(new Error('Тест не найден'));
+                }
+            };
+            reader.onerror = () => reject(new Error('Ошибка чтения файла'));
+            reader.readAsText(file, 'UTF-8');
+        });
+    }
+    function showToast(msg,isError=false){const t=document.createElement('div');t.className='toast-message';t.style.background=isError?'#ef4444':'#10b981';t.textContent=msg;document.body.appendChild(t);setTimeout(()=>t.remove(),3000);}
     function escapeHtml(s){if(!s)return '';return s.replace(/[&<>]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[m]));}
     document.getElementById('createNewQuestionBtn').addEventListener('click',()=>{if(currentTestId)location.href=`edit-question.html?testId=${currentTestId}&mode=new`;});
     document.getElementById('manageTestBtn').addEventListener('click',()=>{if(currentTestId)location.href=`manage-test.html?testId=${currentTestId}`;});
+    // Обработчик загрузки HTML
+    document.getElementById('htmlFileInput').addEventListener('change', async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        try {
+            await importQuestionFromHTML(file);
+        } catch (err) {
+            showToast(err.message, true);
+        }
+        e.target.value = ''; // сброс для повторной загрузки того же файла
+    });
+    document.getElementById('uploadHtmlBtn').addEventListener('click', () => {
+        document.getElementById('htmlFileInput').click();
+    });
     const modal=document.getElementById('taskModal');
     document.getElementById('addFromBaseBtn').addEventListener('click',async()=>{
         const tasksRes=await fetch('/api/tasks-base');
@@ -156,20 +244,19 @@
         modal.style.display='flex';
     });
     document.getElementById('closeTaskModal').addEventListener('click',()=>{modal.style.display='none';});
-    // Модальное окно смены номера
-    document.getElementById('cancelNumberBtn').addEventListener('click',()=>{
-        document.getElementById('changeNumberModal').style.display='none';
-        movingQuestionId=null;
-    });
-    document.getElementById('saveNumberBtn').addEventListener('click',async()=>{
+    const numberModal = document.getElementById('changeNumberModal');
+    document.getElementById('cancelNumberBtn').addEventListener('click', () => { numberModal.style.display = 'none'; movingQuestionId = null; });
+    document.getElementById('saveNumberBtn').addEventListener('click', async () => {
         const newPos = parseInt(document.getElementById('newNumberInput').value);
-        if(isNaN(newPos)){alert('Введите число');return;}
-        if(newPos<1 || newPos>currentTest.questions.length){alert(`Номер должен быть от 1 до ${currentTest.questions.length}`);return;}
+        if (isNaN(newPos) || newPos < 1 || newPos > currentTest.questions.length) {
+            showToast('Некорректный номер', true);
+            return;
+        }
         await changeQuestionNumber(movingQuestionId, newPos);
-        document.getElementById('changeNumberModal').style.display='none';
-        movingQuestionId=null;
+        numberModal.style.display = 'none';
+        movingQuestionId = null;
     });
-    loadTestFromUrl();
+    checkAuth().then(ok => { if(ok) loadTestFromUrl(); });
 </script>
 </body>
 </html>
