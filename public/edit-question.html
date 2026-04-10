@@ -27,10 +27,12 @@
         .btn-save{background:#3b82f6;color:white;border:none;padding:0.8rem 2rem;border-radius:40px;font-weight:600;cursor:pointer;}
         .btn-cancel{background:white;border:1px solid #cbd5e1;padding:0.8rem 2rem;border-radius:40px;cursor:pointer;}
         .info-tip{font-size:0.75rem;color:#475569;margin-top:6px;}
+        .toolbar{display:flex;gap:1rem;margin-bottom:1rem;justify-content:flex-end;}
     </style>
 </head>
 <body>
 <div class="container">
+    <div class="toolbar"><button id="exportDbBtn" class="btn btn-outline">Сохранить БД в файл</button><label class="btn btn-outline">Загрузить БД из файла<input type="file" id="importDbInput" accept=".db" style="display:none;"></label></div>
     <a href="questions.html" id="backLink" class="back-link">← Вернуться к вопросам</a>
     <div class="card">
         <h2 id="formTitle">Создание вопроса</h2>
@@ -43,14 +45,13 @@
 </div>
 <script>
     let editorInstance=null, currentTestId=null, currentQuestionId=null, currentAnswers=[];
-    async function fetchTests(){const r=await fetch('/api/tests');return r.json();}
-    async function saveTests(t){await fetch('/api/tests',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(t)});}
+    async function fetchJson(url, options) { const res = await fetch(url, options); if (!res.ok) throw new Error(await res.text()); return res.json(); }
     async function init(){
         const params=new URLSearchParams(location.search);
         currentTestId=params.get('testId');
         const modeOrQid=params.get('questionId'), isNew=params.get('mode')==='new';
         if(!currentTestId){alert('Тест не указан');location.href='index.html';return;}
-        const tests=await fetchTests();
+        const tests=await fetchJson('/api/tests',{method:'GET'});
         const test=tests.find(t=>t.id===currentTestId);
         if(!test){alert('Тест не найден');location.href='index.html';return;}
         document.getElementById('backLink').href=`questions.html?testId=${currentTestId}`;
@@ -126,7 +127,7 @@
         if(!currentAnswers.some(a=>a.isCorrect)){alert('Выберите хотя бы один правильный ответ');return;}
         let editorData=editorInstance?await editorInstance.save():{blocks:[]};
         const newQuestion={id:currentQuestionId||('q_'+Date.now()+'_'+Math.random().toString(36).substr(2,6)),titleQuestion:title,editorData,answers:currentAnswers.map(a=>({text:a.text,isCorrect:a.isCorrect})),answerOptions:currentAnswers.map(a=>a.text),correctIndices:currentAnswers.reduce((arr,a,idx)=>{if(a.isCorrect)arr.push(idx);return arr},[]),requireFileAttachment:document.getElementById('requireFileAttachment').checked,hasEditorContent:true};
-        let tests=await fetchTests();
+        let tests=await fetchJson('/api/tests',{method:'GET'});
         const testIdx=tests.findIndex(t=>t.id===currentTestId);
         if(testIdx===-1){alert('Тест не найден');return;}
         if(!tests[testIdx].questions)tests[testIdx].questions=[];
@@ -135,7 +136,7 @@
             if(qIdx!==-1)tests[testIdx].questions[qIdx]=newQuestion;
             else tests[testIdx].questions.push(newQuestion);
         }else tests[testIdx].questions.push(newQuestion);
-        await saveTests(tests);
+        await fetchJson('/api/tests',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(tests)});
         alert('Вопрос сохранён');
         location.href=`questions.html?testId=${currentTestId}`;
     }
@@ -143,6 +144,8 @@
     document.getElementById('addAnswerBtn').addEventListener('click',()=>{currentAnswers.push({text:"",isCorrect:false});renderAnswersUI();});
     document.getElementById('saveQuestionBtn').addEventListener('click',saveQuestion);
     document.getElementById('cancelBtn').addEventListener('click',()=>{if(confirm('Отменить изменения?'))location.href=`questions.html?testId=${currentTestId}`;});
+    document.getElementById('exportDbBtn').onclick=()=>window.location.href='/api/export-db';
+    document.getElementById('importDbInput').onchange=async(e)=>{if(e.target.files.length){const fd=new FormData();fd.append('db',e.target.files[0]);await fetch('/api/import-db',{method:'POST',body:fd});alert('База импортирована');location.reload();}};
     init();
 </script>
 </body>
