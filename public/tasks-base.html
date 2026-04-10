@@ -19,7 +19,7 @@
         .modal-content{background:white;border-radius:32px;padding:2rem;max-width:800px;width:90%;max-height:80%;overflow-y:auto;}
         .form-group{margin-bottom:1rem;}
         label{font-weight:600;display:block;margin-bottom:0.5rem;}
-        input[type="text"]{width:100%;padding:0.8rem;border:1px solid #cbd5e1;border-radius:20px;}
+        input[type="text"], input[type="number"]{width:100%;padding:0.8rem;border:1px solid #cbd5e1;border-radius:20px;}
         .editor-wrapper{border:1px solid #e2e8f0;border-radius:24px;padding:0.5rem;}
         .answers-section{background:#f9fafb;border-radius:24px;padding:1.2rem;margin-top:1rem;}
         .answer-item{display:flex;align-items:center;gap:12px;margin-bottom:12px;background:white;padding:8px 12px;border-radius:60px;}
@@ -27,6 +27,9 @@
         .answer-correct{width:24px;height:24px;}
         .add-answer{margin-top:12px;background:#eef2ff;border:none;padding:0.5rem 1rem;border-radius:40px;cursor:pointer;}
         .checkbox-group{margin:1rem 0;display:flex;align-items:center;gap:12px;}
+        .toast{position:fixed;bottom:20px;right:20px;background:#10b981;color:white;padding:12px 20px;border-radius:40px;z-index:1000;animation:fadein 0.3s;}
+        .toast.error{background:#ef4444;}
+        @keyframes fadein{from{opacity:0;transform:translateX(100%);}to{opacity:1;transform:translateX(0);}}
     </style>
 </head>
 <body>
@@ -34,33 +37,24 @@
     <a href="index.html" class="back-link">← На главную</a>
     <div class="card"><h2>База заданий</h2><button id="createTaskBtn" class="btn btn-primary">+ Создать задание</button><div id="tasksList" style="margin-top:1rem;"></div></div>
 </div>
-<div id="taskModal" class="modal"><div class="modal-content"><h3 id="modalTitle">Создание задания</h3><div class="form-group"><label>Заголовок задания</label><input type="text" id="taskTitle"></div><div class="form-group"><label>Текст задания</label><div class="editor-wrapper"><div id="editorjs"></div></div></div><div class="checkbox-group"><input type="checkbox" id="requireFile"><label>Требуется прикрепление файлов</label></div><div class="checkbox-group"><input type="checkbox" id="availableCheckbox" checked><label>Доступно для добавления в тесты</label></div><div class="answers-section"><label>Варианты ответов (отметьте правильные)</label><div id="answersList"></div><button type="button" id="addAnswerBtn" class="add-answer">+ Добавить вариант</button></div><div class="modal-buttons" style="display:flex;justify-content:flex-end;gap:12px;margin-top:1rem;"><button id="cancelTaskBtn" class="btn">Отмена</button><button id="saveTaskBtn" class="btn btn-primary">Сохранить</button></div></div></div>
+<div id="taskModal" class="modal"><div class="modal-content"><h3 id="modalTitle">Создание задания</h3><div class="form-group"><label>Заголовок задания</label><input type="text" id="taskTitle"></div><div class="form-group"><label>Баллы за задание</label><input type="number" id="taskPoints" value="1" min="0.5" step="0.5"></div><div class="form-group"><label>Текст задания</label><div class="editor-wrapper"><div id="editorjs"></div></div></div><div class="checkbox-group"><input type="checkbox" id="requireFile"><label>Требуется прикрепление файлов</label></div><div class="checkbox-group"><input type="checkbox" id="availableCheckbox" checked><label>Доступно для добавления в тесты</label></div><div class="answers-section"><label>Варианты ответов (отметьте правильные)</label><div id="answersList"></div><button type="button" id="addAnswerBtn" class="add-answer">+ Добавить вариант</button></div><div class="modal-buttons" style="display:flex;justify-content:flex-end;gap:12px;margin-top:1rem;"><button id="cancelTaskBtn" class="btn">Отмена</button><button id="saveTaskBtn" class="btn btn-primary">Сохранить</button></div></div></div>
 <script>
     let tasks=[], currentTaskId=null, editorInstance=null, currentAnswers=[];
-    
-    async function checkAuth() {
-        const res = await fetch('/api/check-session');
-        const data = await res.json();
-        if (!data.authenticated) {
-            window.location.href = 'index.html';
-            return false;
-        }
-        return true;
-    }
-
+    function showToast(msg, isError=false){const t=document.createElement('div');t.className='toast'+(isError?' error':'');t.textContent=msg;document.body.appendChild(t);setTimeout(()=>t.remove(),3000);}
     async function fetchTasks(){const r=await fetch('/api/tasks-base');return r.json();}
     async function saveTasks(t){await fetch('/api/tasks-base',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(t)});}
     async function load(){tasks=await fetchTasks();renderTasks();}
     function renderTasks(){
         const container=document.getElementById('tasksList');
         if(!tasks.length){container.innerHTML='<p>Нет заданий. Создайте первое.</p>';return;}
-        container.innerHTML=tasks.map((t,idx)=>`<div class="task-item"><div><strong>${escapeHtml(t.title)}</strong><br>Вариантов: ${t.answerOptions?.length||0} | ${t.availableInBase!==false ? 'Доступно' : 'Скрыто'}</div><div><button class="btn edit-task" data-idx="${idx}">Редактировать</button> <button class="btn delete-task" data-idx="${idx}" style="color:red;">Удалить</button></div></div>`).join('');
+        container.innerHTML=tasks.map((t,idx)=>`<div class="task-item"><div><strong>${escapeHtml(t.title)}</strong><br>Вариантов: ${t.answerOptions?.length||0} | Баллов: ${t.points||1} | ${t.availableInBase!==false?'Доступно':'Скрыто'}</div><div><button class="btn edit-task" data-idx="${idx}">Редактировать</button> <button class="btn delete-task" data-idx="${idx}" style="color:red;">Удалить</button></div></div>`).join('');
         document.querySelectorAll('.edit-task').forEach(btn=>btn.addEventListener('click',()=>{const idx=parseInt(btn.dataset.idx);openModal(tasks[idx],idx);}));
-        document.querySelectorAll('.delete-task').forEach(btn=>btn.addEventListener('click',async()=>{if(confirm('Удалить задание?')){tasks.splice(parseInt(btn.dataset.idx),1);await saveTasks(tasks);load();}}));
+        document.querySelectorAll('.delete-task').forEach(btn=>btn.addEventListener('click',async()=>{if(confirm('Удалить задание?')){tasks.splice(parseInt(btn.dataset.idx),1);await saveTasks(tasks);load();showToast('Задание удалено');}}));
     }
     function openModal(task,idx){
         currentTaskId=idx!==undefined?idx:null;
         document.getElementById('taskTitle').value=task?task.title:'';
+        document.getElementById('taskPoints').value=task?.points||1;
         document.getElementById('requireFile').checked=task?(task.requireFileAttachment||false):false;
         document.getElementById('availableCheckbox').checked=task?(task.availableInBase!==false):true;
         if(task?.editorData && editorInstance) editorInstance.render(task.editorData);
@@ -112,14 +106,17 @@
     }
     async function saveCurrent(){
         const title=document.getElementById('taskTitle').value.trim();
-        if(!title){alert('Введите заголовок');return;}
-        if(!currentAnswers.length){alert('Добавьте варианты ответов');return;}
-        if(currentAnswers.some(a=>!a.text.trim())){alert('Все варианты должны содержать текст');return;}
-        if(!currentAnswers.some(a=>a.isCorrect)){alert('Выберите хотя бы один правильный ответ');return;}
+        if(!title){showToast('Введите заголовок',true);return;}
+        const points=parseFloat(document.getElementById('taskPoints').value);
+        if(isNaN(points)||points<=0){showToast('Укажите корректное количество баллов',true);return;}
+        if(!currentAnswers.length){showToast('Добавьте варианты ответов',true);return;}
+        if(currentAnswers.some(a=>!a.text.trim())){showToast('Все варианты должны содержать текст',true);return;}
+        if(!currentAnswers.some(a=>a.isCorrect)){showToast('Выберите хотя бы один правильный ответ',true);return;}
         let editorData=editorInstance?await editorInstance.save():{blocks:[]};
         const newTask={
             id:currentTaskId!==null?tasks[currentTaskId].id:Date.now()+'_'+Math.random(),
             title,
+            points:points,
             editorData,
             answers:currentAnswers.map(a=>({text:a.text,isCorrect:a.isCorrect})),
             answerOptions:currentAnswers.map(a=>a.text),
@@ -133,9 +130,11 @@
         load();
         document.getElementById('taskModal').style.display='none';
         resetModal();
+        showToast('Задание сохранено');
     }
     function resetModal(){
         document.getElementById('taskTitle').value='';
+        document.getElementById('taskPoints').value=1;
         document.getElementById('requireFile').checked=false;
         document.getElementById('availableCheckbox').checked=true;
         currentAnswers=[];
@@ -148,8 +147,7 @@
     document.getElementById('saveTaskBtn').addEventListener('click',saveCurrent);
     document.getElementById('cancelTaskBtn').addEventListener('click',()=>{document.getElementById('taskModal').style.display='none';resetModal();});
     function escapeHtml(s){if(!s)return '';return s.replace(/[&<>]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[m]));}
-    
-    checkAuth().then(ok => { if(ok) { load(); initEditor(); } });
+    load(); initEditor();
 </script>
 </body>
 </html>
