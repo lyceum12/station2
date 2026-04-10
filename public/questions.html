@@ -29,15 +29,13 @@
         .modal-content{background:white;border-radius:32px;padding:2rem;max-width:600px;width:90%;max-height:80%;overflow-y:auto;}
         .task-item{border:1px solid #e2e8f0;border-radius:16px;padding:0.8rem;margin-bottom:0.8rem;cursor:pointer;}
         .task-item:hover{background:#f8fafc;}
-        .toolbar{display:flex;gap:1rem;margin-bottom:1rem;justify-content:flex-end;}
     </style>
 </head>
 <body>
 <div class="container">
-    <div class="toolbar"><button id="exportDbBtn" class="btn btn-outline">Сохранить БД в файл</button><label class="btn btn-outline">Загрузить БД из файла<input type="file" id="importDbInput" accept=".db" style="display:none;"></label></div>
     <a href="index.html" class="back-link">← На главную</a>
     <div class="header-info">
-        <div class="test-title-section"><div id="testTitleContainer"></div><div class="test-badge" id="testIdBadge"></div></div>
+        <div><div id="testTitleContainer"></div><div class="test-badge" id="testIdBadge"></div></div>
         <div><button class="btn btn-outline" id="manageTestBtn">Управление тестом</button><button class="btn btn-outline" id="addFromBaseBtn">Добавить из базы</button><button class="btn btn-primary" id="createNewQuestionBtn">Создать вопрос</button></div>
     </div>
     <div id="questionsListContainer" class="questions-grid"></div>
@@ -79,19 +77,18 @@
         container.innerHTML=qs.map((q,idx)=>`<div class="question-card" data-qid="${q.id}"><div class="question-preview"><h3>${escapeHtml(q.titleQuestion||"Без заголовка")}</h3><div class="question-meta"><span>Вопрос #${idx+1}</span><span>Правильных ответов: ${(q.correctIndices?.length||q.answers?.filter(a=>a.isCorrect).length||0)}</span><span>${q.requireFileAttachment?'Требует файл':'Без файла'}</span></div></div><div><button class="btn btn-outline btn-sm edit-question" data-qid="${q.id}">Редактировать</button> <button class="btn btn-danger btn-sm delete-question" data-qid="${q.id}">Удалить</button></div></div>`).join('');
         document.querySelectorAll('.edit-question').forEach(btn=>btn.onclick=()=>location.href=`edit-question.html?testId=${currentTestId}&questionId=${btn.dataset.qid}`);
         document.querySelectorAll('.delete-question').forEach(btn=>btn.onclick=async()=>{if(confirm('Удалить вопрос?')){let tests=await fetchJson('/api/tests',{method:'GET'});const idx=tests.findIndex(t=>t.id===currentTestId);if(idx!==-1){tests[idx].questions=tests[idx].questions.filter(q=>q.id!==btn.dataset.qid);await fetchJson('/api/tests',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(tests)});currentTest=tests[idx];renderQuestionsList();}}});
-        // Drag & drop сортировка
         new Sortable(container, {
-            animation: 150,
-            onEnd: async function() {
-                const newOrder = [];
-                document.querySelectorAll('.question-card').forEach(card => newOrder.push(card.getAttribute('data-qid')));
-                let tests = await fetchJson('/api/tests', { method: 'GET' });
-                const testIdx = tests.findIndex(t => t.id === currentTestId);
-                if (testIdx !== -1) {
-                    const reordered = newOrder.map(id => tests[testIdx].questions.find(q => q.id === id));
-                    tests[testIdx].questions = reordered;
-                    await fetchJson('/api/tests', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(tests) });
-                    currentTest = tests[testIdx];
+            animation:150,
+            onEnd:async function(){
+                const newOrder=[];
+                document.querySelectorAll('.question-card').forEach(card=>newOrder.push(card.getAttribute('data-qid')));
+                let tests=await fetchJson('/api/tests',{method:'GET'});
+                const testIdx=tests.findIndex(t=>t.id===currentTestId);
+                if(testIdx!==-1){
+                    const reordered=newOrder.map(id=>tests[testIdx].questions.find(q=>q.id===id));
+                    tests[testIdx].questions=reordered;
+                    await fetchJson('/api/tests',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(tests)});
+                    currentTest=tests[testIdx];
                     showToast('Порядок вопросов сохранён');
                 }
             }
@@ -122,8 +119,6 @@
         modal.style.display='flex';
     };
     document.getElementById('closeTaskModal').onclick=()=>modal.style.display='none';
-    document.getElementById('exportDbBtn').onclick=()=>window.location.href='/api/export-db';
-    document.getElementById('importDbInput').onchange=async(e)=>{if(e.target.files.length){const fd=new FormData();fd.append('db',e.target.files[0]);await fetch('/api/import-db',{method:'POST',body:fd});alert('База импортирована');location.reload();}};
     loadTestFromUrl();
 </script>
 </body>
