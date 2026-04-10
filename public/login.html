@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Вход в систему</title>
+    <style>
+        *{margin:0;padding:0;box-sizing:border-box;font-family:system-ui,'Segoe UI',sans-serif;}
+        body{background:#f1f5f9;min-height:100vh;display:flex;justify-content:center;align-items:center;}
+        .login-container{background:white;border-radius:32px;padding:2rem;width:400px;max-width:90%;box-shadow:0 8px 20px rgba(0,0,0,0.1);}
+        h1{font-size:1.8rem;margin-bottom:1.5rem;text-align:center;}
+        input{width:100%;padding:0.8rem;margin-bottom:1rem;border:1px solid #cbd5e1;border-radius:40px;font-size:1rem;}
+        button{width:100%;background:#3b82f6;color:white;border:none;padding:0.8rem;border-radius:40px;font-weight:600;cursor:pointer;}
+        .error{color:red;text-align:center;margin-top:1rem;}
+    </style>
+</head>
+<body>
+<div class="login-container">
+    <h1>Вход в панель учителя</h1>
+    <input type="text" id="login" placeholder="Логин" autocomplete="off">
+    <input type="password" id="password" placeholder="Пароль">
+    <button id="loginBtn">Войти</button>
+    <div id="errorMsg" class="error"></div>
+</div>
+<script>
+    document.getElementById('loginBtn').addEventListener('click', async () => {
+        const login = document.getElementById('login').value.trim();
+        const password = document.getElementById('password').value;
+        const res = await fetch('/api/login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ login, password })
+        });
+        if (res.ok) {
+            const data = await res.json();
+            if (data.role === 'superadmin') window.location.href = 'dashboard.html';
+            else window.location.href = 'dashboard.html';
+        } else {
+            const err = await res.json();
+            document.getElementById('errorMsg').innerText = err.error || 'Ошибка входа';
+        }
+    });
+</script>
+</body>
+</html>
