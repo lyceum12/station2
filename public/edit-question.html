@@ -1,9 +1,7 @@
 <!DOCTYPE html>
 <html lang="ru">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Редактор вопроса</title>
+    <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Редактор вопроса</title>
     <script src="https://cdn.jsdelivr.net/npm/@editorjs/editorjs@2.31.5/dist/editorjs.umd.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@editorjs/header@2.8.8/dist/header.umd.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@editorjs/list@2.0.9/dist/editorjs-list.umd.min.js"></script>
@@ -44,64 +42,36 @@
     </div>
 </div>
 <script>
-    let editorInstance = null;
-    let currentTestId = null;
-    let currentQuestionId = null;
-    let currentAnswers = [];
-
-    async function fetchJson(url, options) {
-        const res = await fetch(url, options);
+    let editorInstance = null, currentTestId = null, currentQuestionId = null, currentAnswers = [];
+    async function fetchJson(url, options = {}) {
+        const res = await fetch(url, {
+            ...options,
+            credentials: 'include',
+            headers: { 'Content-Type': 'application/json', ...(options.headers || {}) }
+        });
         if (!res.ok) throw new Error(await res.text());
         return res.json();
     }
-
     async function init() {
         const params = new URLSearchParams(location.search);
         currentTestId = params.get('testId');
-        const modeOrQid = params.get('questionId');
-        const isNew = params.get('mode') === 'new';
-
-        if (!currentTestId) {
-            alert('Тест не указан');
-            location.href = 'index.html';
-            return;
-        }
-
-        const tests = await fetchJson('/api/tests', { method: 'GET' });
+        const modeOrQid = params.get('questionId'), isNew = params.get('mode') === 'new';
+        if (!currentTestId) { alert('Тест не указан'); location.href = 'index.html'; return; }
+        const tests = await fetchJson('/api/tests');
         const test = tests.find(t => t.id === currentTestId);
-        if (!test) {
-            alert('Тест не найден');
-            location.href = 'index.html';
-            return;
-        }
-
+        if (!test) { alert('Тест не найден'); location.href = 'index.html'; return; }
         document.getElementById('backLink').href = `questions.html?testId=${currentTestId}`;
-
         if (!isNew && modeOrQid && modeOrQid !== 'null') {
             currentQuestionId = modeOrQid;
-            const question = test.questions?.find(q => q.id === currentQuestionId);
-            if (question) {
-                loadQuestionData(question);
-                document.getElementById('formTitle').innerText = 'Редактирование вопроса';
-            } else {
-                alert('Вопрос не найден, будет создан новый');
-                currentQuestionId = null;
-            }
+            const q = test.questions?.find(qq => qq.id === currentQuestionId);
+            if (q) { loadQuestionData(q); document.getElementById('formTitle').innerText = 'Редактирование вопроса'; }
+            else { alert('Вопрос не найден, будет создан новый'); currentQuestionId = null; }
         }
-
-        if (!currentQuestionId) {
-            document.getElementById('formTitle').innerText = 'Новый вопрос';
-            resetForm();
-        }
-
+        if (!currentQuestionId) { document.getElementById('formTitle').innerText = 'Новый вопрос'; resetForm(); }
         await initEditor();
-        if (window.pendingEditorData) {
-            await editorInstance.render(window.pendingEditorData);
-            delete window.pendingEditorData;
-        }
+        if (window.pendingEditorData) { await editorInstance.render(window.pendingEditorData); delete window.pendingEditorData; }
         renderAnswersUI();
     }
-
     function loadQuestionData(q) {
         document.getElementById('questionTitle').value = q.titleQuestion || '';
         document.getElementById('requireFileAttachment').checked = q.requireFileAttachment || false;
@@ -109,44 +79,15 @@
         else if (q.editorData) window.pendingEditorData = q.editorData;
         currentAnswers = q.answers ? [...q.answers] : [];
     }
-
-    function resetForm() {
-        if (editorInstance) editorInstance.clear();
-        currentAnswers = [];
-        renderAnswersUI();
-        document.getElementById('questionTitle').value = '';
-        document.getElementById('requireFileAttachment').checked = false;
-    }
-
+    function resetForm() { if (editorInstance) editorInstance.clear(); currentAnswers = []; renderAnswersUI(); document.getElementById('questionTitle').value = ''; document.getElementById('requireFileAttachment').checked = false; }
     function renderAnswersUI() {
         const container = document.getElementById('answersList');
-        if (!currentAnswers.length) {
-            container.innerHTML = '<div style="padding:1rem;text-align:center;">Нет вариантов ответа</div>';
-            return;
-        }
-        container.innerHTML = currentAnswers.map((a, idx) => `
-            <div class="answer-item">
-                <input type="checkbox" class="answer-correct" data-idx="${idx}" ${a.isCorrect ? 'checked' : ''}>
-                <input type="text" class="answer-text" value="${escapeHtml(a.text)}" placeholder="Вариант" data-idx="${idx}">
-                <button class="btn-icon remove-answer" data-idx="${idx}">🗑️</button>
-            </div>
-        `).join('');
-
-        document.querySelectorAll('.answer-correct').forEach(cb => cb.addEventListener('change', e => {
-            const idx = parseInt(cb.dataset.idx);
-            if (currentAnswers[idx]) currentAnswers[idx].isCorrect = cb.checked;
-        }));
-        document.querySelectorAll('.answer-text').forEach(inp => inp.addEventListener('input', e => {
-            const idx = parseInt(inp.dataset.idx);
-            if (currentAnswers[idx]) currentAnswers[idx].text = inp.value;
-        }));
-        document.querySelectorAll('.remove-answer').forEach(btn => btn.addEventListener('click', e => {
-            const idx = parseInt(btn.dataset.idx);
-            currentAnswers.splice(idx, 1);
-            renderAnswersUI();
-        }));
+        if (!currentAnswers.length) { container.innerHTML = '<div style="padding:1rem;text-align:center;">Нет вариантов ответа</div>'; return; }
+        container.innerHTML = currentAnswers.map((a, idx) => `<div class="answer-item"><input type="checkbox" class="answer-correct" data-idx="${idx}" ${a.isCorrect ? 'checked' : ''}><input type="text" class="answer-text" value="${escapeHtml(a.text)}" placeholder="Вариант" data-idx="${idx}"><button class="btn-icon remove-answer" data-idx="${idx}">🗑️</button></div>`).join('');
+        document.querySelectorAll('.answer-correct').forEach(cb => cb.addEventListener('change', e => { const idx = parseInt(cb.dataset.idx); if (currentAnswers[idx]) currentAnswers[idx].isCorrect = cb.checked; }));
+        document.querySelectorAll('.answer-text').forEach(inp => inp.addEventListener('input', e => { const idx = parseInt(inp.dataset.idx); if (currentAnswers[idx]) currentAnswers[idx].text = inp.value; }));
+        document.querySelectorAll('.remove-answer').forEach(btn => btn.addEventListener('click', e => { const idx = parseInt(btn.dataset.idx); currentAnswers.splice(idx, 1); renderAnswersUI(); }));
     }
-
     async function initEditor() {
         class CustomImage {
             constructor({ data }) { this.data = data; this.wrapper = null; }
@@ -154,36 +95,17 @@
             render() {
                 this.wrapper = document.createElement('div');
                 if (this.data?.file?.url) {
-                    const img = document.createElement('img');
-                    img.src = this.data.file.url;
-                    img.style.maxWidth = '100%';
-                    this.wrapper.appendChild(img);
-                    if (this.data.caption) {
-                        const cap = document.createElement('figcaption');
-                        cap.innerText = this.data.caption;
-                        this.wrapper.appendChild(cap);
-                    }
+                    const img = document.createElement('img'); img.src = this.data.file.url; img.style.maxWidth = '100%'; this.wrapper.appendChild(img);
+                    if (this.data.caption) { const cap = document.createElement('figcaption'); cap.innerText = this.data.caption; this.wrapper.appendChild(cap); }
                 } else {
-                    const btn = document.createElement('button');
-                    btn.innerText = 'Загрузить изображение';
-                    btn.style.padding = '8px';
-                    btn.style.cursor = 'pointer';
+                    const btn = document.createElement('button'); btn.innerText = 'Загрузить изображение'; btn.style.padding = '8px'; btn.style.cursor = 'pointer';
                     btn.onclick = () => {
-                        const input = document.createElement('input');
-                        input.type = 'file';
-                        input.accept = 'image/*';
+                        const input = document.createElement('input'); input.type = 'file'; input.accept = 'image/*';
                         input.onchange = e => {
                             const file = e.target.files[0];
                             if (file) {
                                 const reader = new FileReader();
-                                reader.onload = ev => {
-                                    this.data = { file: { url: ev.target.result }, caption: '' };
-                                    this.wrapper.innerHTML = '';
-                                    const img = document.createElement('img');
-                                    img.src = ev.target.result;
-                                    img.style.maxWidth = '100%';
-                                    this.wrapper.appendChild(img);
-                                };
+                                reader.onload = ev => { this.data = { file: { url: ev.target.result }, caption: '' }; this.wrapper.innerHTML = ''; const img = document.createElement('img'); img.src = ev.target.result; img.style.maxWidth = '100%'; this.wrapper.appendChild(img); };
                                 reader.readAsDataURL(file);
                             }
                         };
@@ -195,22 +117,15 @@
             }
             save() { return this.data; }
         }
-        const tools = {
-            header: { class: window.Header, config: { placeholder: "Введите заголовок..." } },
-            list: { class: window.EditorjsList, inlineToolbar: true },
-            paragraph: { class: window.Paragraph, inlineToolbar: true },
-            image: { class: CustomImage }
-        };
+        const tools = { header: { class: window.Header, config: { placeholder: "Введите заголовок..." } }, list: { class: window.EditorjsList, inlineToolbar: true }, paragraph: { class: window.Paragraph, inlineToolbar: true }, image: { class: CustomImage } };
         editorInstance = new window.EditorJS({ holder: "editorjs", tools, placeholder: "Текст вопроса...", data: {} });
     }
-
     async function saveQuestion() {
         const title = document.getElementById('questionTitle').value.trim();
         if (!title) { alert('Укажите заголовок'); return; }
         if (!currentAnswers.length) { alert('Добавьте варианты ответов'); return; }
         if (currentAnswers.some(a => !a.text.trim())) { alert('Все варианты должны содержать текст'); return; }
         if (!currentAnswers.some(a => a.isCorrect)) { alert('Выберите хотя бы один правильный ответ'); return; }
-
         let editorData = editorInstance ? await editorInstance.save() : { blocks: [] };
         const newQuestion = {
             id: currentQuestionId || ('q_' + Date.now() + '_' + Math.random().toString(36).substr(2, 6)),
@@ -222,12 +137,10 @@
             requireFileAttachment: document.getElementById('requireFileAttachment').checked,
             hasEditorContent: true
         };
-
-        let tests = await fetchJson('/api/tests', { method: 'GET' });
+        let tests = await fetchJson('/api/tests');
         const testIdx = tests.findIndex(t => t.id === currentTestId);
         if (testIdx === -1) { alert('Тест не найден'); return; }
         if (!tests[testIdx].questions) tests[testIdx].questions = [];
-
         if (currentQuestionId) {
             const qIdx = tests[testIdx].questions.findIndex(q => q.id === currentQuestionId);
             if (qIdx !== -1) tests[testIdx].questions[qIdx] = newQuestion;
@@ -235,30 +148,14 @@
         } else {
             tests[testIdx].questions.push(newQuestion);
         }
-
-        await fetchJson('/api/tests', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(tests)
-        });
+        await fetchJson('/api/tests', { method: 'POST', body: JSON.stringify(tests) });
         alert('Вопрос сохранён');
         location.href = `questions.html?testId=${currentTestId}`;
     }
-
-    function escapeHtml(s) {
-        if (!s) return '';
-        return s.replace(/[&<>]/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[m]));
-    }
-
-    document.getElementById('addAnswerBtn').addEventListener('click', () => {
-        currentAnswers.push({ text: "", isCorrect: false });
-        renderAnswersUI();
-    });
+    function escapeHtml(s) { if (!s) return ''; return s.replace(/[&<>]/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[m])); }
+    document.getElementById('addAnswerBtn').addEventListener('click', () => { currentAnswers.push({ text: "", isCorrect: false }); renderAnswersUI(); });
     document.getElementById('saveQuestionBtn').addEventListener('click', saveQuestion);
-    document.getElementById('cancelBtn').addEventListener('click', () => {
-        if (confirm('Отменить изменения?')) location.href = `questions.html?testId=${currentTestId}`;
-    });
-
+    document.getElementById('cancelBtn').addEventListener('click', () => { if (confirm('Отменить изменения?')) location.href = `questions.html?testId=${currentTestId}`; });
     init();
 </script>
 </body>
