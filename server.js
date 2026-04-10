@@ -1,5 +1,4 @@
 const express = require('express');
-const sqlite3 = require('sqlite3').verbose();
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
@@ -8,6 +7,7 @@ const { v4: uuidv4 } = require('uuid');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// Middleware
 app.use(express.json({ limit: '50mb' }));
 app.use(express.static('public'));
 
@@ -17,109 +17,76 @@ const uploadsDir = path.join(__dirname, 'uploads');
 if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir);
 if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir);
 
-// SQLite база данных
-const db = new sqlite3.Database(path.join(dataDir, 'test_constructor.db'));
+// Файлы данных
+const testsFile = path.join(dataDir, 'tests.json');
+const usersFile = path.join(dataDir, 'users.json');
+const tasksFile = path.join(dataDir, 'tasks_base.json');
+const sessionsFile = path.join(dataDir, 'sessions.json');
 
-// Инициализация таблиц
-db.serialize(() => {
-    db.run(`CREATE TABLE IF NOT EXISTS tests (
-        id TEXT PRIMARY KEY,
-        data TEXT
-    )`);
-    db.run(`CREATE TABLE IF NOT EXISTS users_data (
-        id TEXT PRIMARY KEY,
-        data TEXT
-    )`);
-    db.run(`CREATE TABLE IF NOT EXISTS tasks_base (
-        id TEXT PRIMARY KEY,
-        data TEXT
-    )`);
-    db.run(`CREATE TABLE IF NOT EXISTS sessions (
-        id TEXT PRIMARY KEY,
-        data TEXT
-    )`);
-    
-    // Начальные данные, если пусто
-    db.get("SELECT * FROM tests WHERE id = 'all_tests'", (err, row) => {
-        if (!row) {
-            db.run("INSERT INTO tests (id, data) VALUES (?, ?)", ['all_tests', JSON.stringify([])]);
-        }
-    });
-    db.get("SELECT * FROM users_data WHERE id = 'all_users'", (err, row) => {
-        if (!row) {
-            db.run("INSERT INTO users_data (id, data) VALUES (?, ?)", ['all_users', JSON.stringify({ groups: [], users: [] })]);
-        }
-    });
-    db.get("SELECT * FROM tasks_base WHERE id = 'all_tasks'", (err, row) => {
-        if (!row) {
-            db.run("INSERT INTO tasks_base (id, data) VALUES (?, ?)", ['all_tasks', JSON.stringify([])]);
-        }
-    });
-    db.get("SELECT * FROM sessions WHERE id = 'all_sessions'", (err, row) => {
-        if (!row) {
-            db.run("INSERT INTO sessions (id, data) VALUES (?, ?)", ['all_sessions', JSON.stringify([])]);
-        }
-    });
-});
+// Инициализация файлов
+function initFile(file, defaultData) {
+    if (!fs.existsSync(file)) {
+        fs.writeFileSync(file, JSON.stringify(defaultData, null, 2));
+    }
+}
+initFile(testsFile, []);
+initFile(usersFile, { groups: [], users: [] });
+initFile(tasksFile, []);
+initFile(sessionsFile, []);
 
-// CRUD для тестов
+// Вспомогательные функции
+function readJSON(file) {
+    const data = fs.readFileSync(file, 'utf8');
+    return JSON.parse(data);
+}
+function writeJSON(file, data) {
+    fs.writeFileSync(file, JSON.stringify(data, null, 2));
+}
+
+// ========== API ==========
+
+// Тесты
 app.get('/api/tests', (req, res) => {
-    db.get("SELECT data FROM tests WHERE id = 'all_tests'", (err, row) => {
-        if (err) return res.status(500).json({ error: err.message });
-        res.json(row ? JSON.parse(row.data) : []);
-    });
+    const tests = readJSON(testsFile);
+    res.json(tests);
 });
 app.post('/api/tests', (req, res) => {
     const tests = req.body;
-    db.run("INSERT OR REPLACE INTO tests (id, data) VALUES (?, ?)", ['all_tests', JSON.stringify(tests)], (err) => {
-        if (err) return res.status(500).json({ error: err.message });
-        res.json({ success: true });
-    });
+    writeJSON(testsFile, tests);
+    res.json({ success: true });
 });
 
-// CRUD для пользователей (ученики и группы)
+// Пользователи (ученики и группы)
 app.get('/api/users-data', (req, res) => {
-    db.get("SELECT data FROM users_data WHERE id = 'all_users'", (err, row) => {
-        if (err) return res.status(500).json({ error: err.message });
-        res.json(row ? JSON.parse(row.data) : { groups: [], users: [] });
-    });
+    const data = readJSON(usersFile);
+    res.json(data);
 });
 app.post('/api/users-data', (req, res) => {
     const data = req.body;
-    db.run("INSERT OR REPLACE INTO users_data (id, data) VALUES (?, ?)", ['all_users', JSON.stringify(data)], (err) => {
-        if (err) return res.status(500).json({ error: err.message });
-        res.json({ success: true });
-    });
+    writeJSON(usersFile, data);
+    res.json({ success: true });
 });
 
-// CRUD для базы заданий
+// База заданий
 app.get('/api/tasks-base', (req, res) => {
-    db.get("SELECT data FROM tasks_base WHERE id = 'all_tasks'", (err, row) => {
-        if (err) return res.status(500).json({ error: err.message });
-        res.json(row ? JSON.parse(row.data) : []);
-    });
+    const tasks = readJSON(tasksFile);
+    res.json(tasks);
 });
 app.post('/api/tasks-base', (req, res) => {
     const tasks = req.body;
-    db.run("INSERT OR REPLACE INTO tasks_base (id, data) VALUES (?, ?)", ['all_tasks', JSON.stringify(tasks)], (err) => {
-        if (err) return res.status(500).json({ error: err.message });
-        res.json({ success: true });
-    });
+    writeJSON(tasksFile, tasks);
+    res.json({ success: true });
 });
 
 // Сессии учеников
 app.get('/api/sessions', (req, res) => {
-    db.get("SELECT data FROM sessions WHERE id = 'all_sessions'", (err, row) => {
-        if (err) return res.status(500).json({ error: err.message });
-        res.json(row ? JSON.parse(row.data) : []);
-    });
+    const sessions = readJSON(sessionsFile);
+    res.json(sessions);
 });
 app.post('/api/sessions', (req, res) => {
     const sessions = req.body;
-    db.run("INSERT OR REPLACE INTO sessions (id, data) VALUES (?, ?)", ['all_sessions', JSON.stringify(sessions)], (err) => {
-        if (err) return res.status(500).json({ error: err.message });
-        res.json({ success: true });
-    });
+    writeJSON(sessionsFile, sessions);
+    res.json({ success: true });
 });
 
 // Загрузка файлов
@@ -141,16 +108,22 @@ app.get('/api/uploads/:filename', (req, res) => {
     else res.status(404).json({ error: 'Файл не найден' });
 });
 
-// Экспорт/импорт всей БД
-app.get('/api/export-db', (req, res) => {
-    const filePath = path.join(dataDir, 'test_constructor.db');
-    res.download(filePath, 'test_constructor.db');
+// Экспорт/импорт всех данных (для переноса)
+app.get('/api/export-all', (req, res) => {
+    const data = {
+        tests: readJSON(testsFile),
+        users: readJSON(usersFile),
+        tasks: readJSON(tasksFile),
+        sessions: readJSON(sessionsFile)
+    };
+    res.json(data);
 });
-const multerDb = multer({ storage: multer.memoryStorage() });
-app.post('/api/import-db', multerDb.single('db'), (req, res) => {
-    if (!req.file) return res.status(400).json({ error: 'Файл не загружен' });
-    const newDbPath = path.join(dataDir, 'test_constructor.db');
-    fs.writeFileSync(newDbPath, req.file.buffer);
+app.post('/api/import-all', (req, res) => {
+    const { tests, users, tasks, sessions } = req.body;
+    if (tests) writeJSON(testsFile, tests);
+    if (users) writeJSON(usersFile, users);
+    if (tasks) writeJSON(tasksFile, tasks);
+    if (sessions) writeJSON(sessionsFile, sessions);
     res.json({ success: true });
 });
 
