@@ -27,6 +27,9 @@
         .btn-save{background:#3b82f6;color:white;border:none;padding:0.8rem 2rem;border-radius:40px;font-weight:600;cursor:pointer;}
         .btn-cancel{background:white;border:1px solid #cbd5e1;padding:0.8rem 2rem;border-radius:40px;cursor:pointer;}
         .info-tip{font-size:0.75rem;color:#475569;margin-top:6px;}
+        .toast{position:fixed;bottom:20px;right:20px;background:#10b981;color:white;padding:12px 20px;border-radius:40px;z-index:1000;animation:fadein 0.3s;}
+        .toast.error{background:#ef4444;}
+        @keyframes fadein{from{opacity:0;transform:translateX(100%);}to{opacity:1;transform:translateX(0);}}
     </style>
 </head>
 <body>
@@ -44,22 +47,23 @@
 </div>
 <script>
     let editorInstance=null, currentTestId=null, currentQuestionId=null, currentAnswers=[];
+    function showToast(msg, isError=false){const t=document.createElement('div');t.className='toast'+(isError?' error':'');t.textContent=msg;document.body.appendChild(t);setTimeout(()=>t.remove(),3000);}
     async function fetchTests(){const r=await fetch('/api/tests');return r.json();}
     async function saveTests(t){await fetch('/api/tests',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(t)});}
     async function init(){
         const params=new URLSearchParams(location.search);
         currentTestId=params.get('testId');
         const modeOrQid=params.get('questionId'), isNew=params.get('mode')==='new';
-        if(!currentTestId){alert('Тест не указан');location.href='index.html';return;}
+        if(!currentTestId){showToast('Тест не указан',true);location.href='index.html';return;}
         const tests=await fetchTests();
         const test=tests.find(t=>t.id===currentTestId);
-        if(!test){alert('Тест не найден');location.href='index.html';return;}
+        if(!test){showToast('Тест не найден',true);location.href='index.html';return;}
         document.getElementById('backLink').href=`questions.html?testId=${currentTestId}`;
         if(!isNew && modeOrQid && modeOrQid!=='null'){
             currentQuestionId=modeOrQid;
             const q=test.questions?.find(qq=>qq.id===currentQuestionId);
             if(q){loadQuestionData(q);document.getElementById('formTitle').innerText='Редактирование вопроса';}
-            else{alert('Вопрос не найден');currentQuestionId=null;}
+            else{showToast('Вопрос не найден',true);currentQuestionId=null;}
         }
         if(!currentQuestionId){document.getElementById('formTitle').innerText='Новый вопрос';resetForm();}
         await initEditor();
@@ -123,17 +127,17 @@
     }
     async function saveQuestion(){
         const title=document.getElementById('questionTitle').value.trim();
-        if(!title){alert('Укажите заголовок');return;}
-        if(!currentAnswers.length){alert('Добавьте варианты ответов');return;}
-        if(currentAnswers.some(a=>!a.text.trim())){alert('Все варианты должны содержать текст');return;}
-        if(!currentAnswers.some(a=>a.isCorrect)){alert('Выберите хотя бы один правильный ответ');return;}
+        if(!title){showToast('Укажите заголовок',true);return;}
+        if(!currentAnswers.length){showToast('Добавьте варианты ответов',true);return;}
+        if(currentAnswers.some(a=>!a.text.trim())){showToast('Все варианты должны содержать текст',true);return;}
+        if(!currentAnswers.some(a=>a.isCorrect)){showToast('Выберите хотя бы один правильный ответ',true);return;}
         let editorData=editorInstance?await editorInstance.save():{blocks:[]};
-        const points = parseFloat(document.getElementById('questionPoints').value);
-        if(isNaN(points) || points <= 0) { alert('Укажите корректное количество баллов (число >0)'); return; }
+        const points=parseFloat(document.getElementById('questionPoints').value);
+        if(isNaN(points)||points<=0){showToast('Укажите корректное количество баллов (число >0)',true);return;}
         const newQuestion={id:currentQuestionId||('q_'+Date.now()+'_'+Math.random().toString(36).substr(2,6)),titleQuestion:title,points:points,editorData,answers:currentAnswers.map(a=>({text:a.text,isCorrect:a.isCorrect})),answerOptions:currentAnswers.map(a=>a.text),correctIndices:currentAnswers.reduce((arr,a,idx)=>{if(a.isCorrect)arr.push(idx);return arr},[]),requireFileAttachment:document.getElementById('requireFileAttachment').checked,hasEditorContent:true};
         let tests=await fetchTests();
         const testIdx=tests.findIndex(t=>t.id===currentTestId);
-        if(testIdx===-1){alert('Тест не найден');return;}
+        if(testIdx===-1){showToast('Тест не найден',true);return;}
         if(!tests[testIdx].questions)tests[testIdx].questions=[];
         if(currentQuestionId){
             const qIdx=tests[testIdx].questions.findIndex(q=>q.id===currentQuestionId);
@@ -141,7 +145,7 @@
             else tests[testIdx].questions.push(newQuestion);
         }else tests[testIdx].questions.push(newQuestion);
         await saveTests(tests);
-        alert('Вопрос сохранён');
+        showToast('Вопрос сохранён');
         location.href=`questions.html?testId=${currentTestId}`;
     }
     function escapeHtml(s){if(!s)return '';return s.replace(/[&<>]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[m]));}
