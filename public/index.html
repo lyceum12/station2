@@ -12,10 +12,18 @@
         .login-container input{width:100%;padding:0.8rem;margin-bottom:1rem;border:1px solid #cbd5e1;border-radius:40px;}
         .login-container button{width:100%;background:#3b82f6;color:white;border:none;padding:0.8rem;border-radius:40px;font-weight:600;cursor:pointer;}
         .error{color:red;text-align:center;margin-top:1rem;}
-        .admin-panel{display:none;max-width:1200px;margin:0 auto;padding:2rem;}
-        .top-bar{display:flex;justify-content:flex-end;gap:1rem;margin-bottom:1rem;flex-wrap:wrap;}
-        .header{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;margin-bottom:2rem;gap:1rem;}
-        h1{font-size:1.9rem;font-weight:700;color:#0f172a;}
+        .admin-panel{display:none;max-width:1400px;margin:0 auto;padding:2rem;}
+        /* Верхняя строка с кнопками пользователя и основными кнопками */
+        .top-row{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:1rem;margin-bottom:1.5rem;}
+        .user-buttons{display:flex;gap:0.8rem;}
+        .main-buttons{display:flex;gap:0.8rem;flex-wrap:wrap;}
+        /* Двухколоночная раскладка: слева тесты, справа администрирование */
+        .dashboard{display:flex;gap:2rem;align-items:flex-start;}
+        .tests-column{flex:2;min-width:0;}
+        .admin-column{flex:1;min-width:280px;background:white;border-radius:32px;padding:1.5rem;border:1px solid #e2e8f0;box-shadow:0 4px 12px rgba(0,0,0,0.05);position:sticky;top:2rem;}
+        .admin-column h2{font-size:1.3rem;margin-bottom:1rem;padding-bottom:0.5rem;border-bottom:1px solid #e2e8f0;}
+        .admin-buttons{display:flex;flex-direction:column;gap:0.8rem;margin-bottom:1.5rem;}
+        .admin-buttons .btn{width:100%;justify-content:center;}
         .btn{background:white;border:none;padding:0.6rem 1.3rem;border-radius:40px;font-weight:600;font-size:0.9rem;cursor:pointer;transition:0.2s;box-shadow:0 1px 2px rgba(0,0,0,0.05);display:inline-flex;align-items:center;gap:8px;}
         .btn-primary{background:#3b82f6;color:white;box-shadow:0 4px 8px rgba(59,130,246,0.2);}
         .btn-primary:hover{background:#2563eb;transform:translateY(-1px);}
@@ -28,21 +36,18 @@
         .test-info p{color:#475569;font-size:0.85rem;}
         .test-actions{display:flex;gap:12px;}
         .empty-state{background:white;border-radius:2rem;padding:3rem;text-align:center;color:#64748b;}
-        footer{margin-top:3rem;text-align:center;font-size:0.8rem;color:#94a3b8;}
+        footer{margin-top:2rem;text-align:center;font-size:0.8rem;color:#94a3b8;}
         .modal{display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);justify-content:center;align-items:center;z-index:1000;}
         .modal-content{background:white;border-radius:32px;padding:2rem;max-width:500px;width:90%;}
         .modal-content input,.modal-content select{width:100%;padding:0.8rem;margin-bottom:1rem;border:1px solid #cbd5e1;border-radius:40px;}
         .modal-buttons{display:flex;justify-content:flex-end;gap:1rem;margin-top:1rem;}
-        .admin-section{margin-top:2rem;background:white;border-radius:32px;padding:1.5rem;}
-        .admin-section h2{font-size:1.3rem;margin-bottom:1rem;}
-        .admin-buttons{display:flex;gap:1rem;flex-wrap:wrap;margin-bottom:1rem;}
         table{width:100%;border-collapse:collapse;margin-top:1rem;}
         th,td{border:1px solid #e2e8f0;padding:0.75rem;text-align:left;}
         th{background:#f8fafc;}
         .toast{position:fixed;bottom:20px;right:20px;background:#10b981;color:white;padding:12px 20px;border-radius:40px;z-index:1000;animation:fadein 0.3s;}
         .toast.error{background:#ef4444;}
         @keyframes fadein{from{opacity:0;transform:translateX(100%);}to{opacity:1;transform:translateX(0);}}
-        @media (max-width:640px){body{padding:1rem;}.admin-panel{padding:1rem;}.test-card{flex-direction:column;align-items:flex-start;gap:12px;}.top-bar{justify-content:center;}}
+        @media (max-width:800px){.dashboard{flex-direction:column;}.admin-column{position:static;}}
     </style>
 </head>
 <body>
@@ -55,27 +60,40 @@
 </div>
 
 <div class="admin-panel" id="adminPanel">
-    <div class="top-bar">
-        <button id="exportDataBtn" class="btn">Сохранить все данные</button>
-        <label class="btn">Загрузить данные<input type="file" id="importDataInput" accept=".json" style="display:none;"></label>
-        <button id="changePwdBtn" class="btn">Сменить пароль</button>
-        <button id="logoutBtn" class="btn">Выйти</button>
-    </div>
-    <div class="header">
-        <h1>Библиотека тестов</h1>
-        <div>
+    <!-- Верхняя строка: кнопки пользователя (слева) и основные кнопки (справа) -->
+    <div class="top-row">
+        <div class="user-buttons">
+            <button id="exportDataBtn" class="btn">Сохранить все данные</button>
+            <label class="btn">Загрузить данные<input type="file" id="importDataInput" accept=".json" style="display:none;"></label>
+            <button id="changePwdBtn" class="btn">Сменить пароль</button>
+            <button id="logoutBtn" class="btn">Выйти</button>
+        </div>
+        <div class="main-buttons">
             <button class="btn btn-outline" id="manageUsersBtn">Управление пользователями</button>
             <button class="btn btn-outline" id="manageTasksBaseBtn">База заданий</button>
             <button class="btn btn-primary" id="createTestBtn">Создать новый тест</button>
         </div>
     </div>
-    <div id="testsList" class="test-list"></div>
-    <div id="superAdminSection" class="admin-section" style="display:none;">
-        <h2>Управление администраторами</h2>
-        <div class="admin-buttons"><button id="createAdminBtn" class="btn btn-primary">+ Добавить администратора</button><button id="viewLogsBtn" class="btn">Просмотр логов</button></div>
-        <div id="adminsList"></div>
+
+    <!-- Двухколоночная область -->
+    <div class="dashboard">
+        <!-- Левая колонка: список тестов -->
+        <div class="tests-column">
+            <h1 style="margin-bottom:1rem;">Библиотека тестов</h1>
+            <div id="testsList" class="test-list"></div>
+            <footer>Редактируйте вопросы, добавляйте изображения</footer>
+        </div>
+
+        <!-- Правая колонка: панель администратора (только для super_admin) -->
+        <div id="superAdminPanel" class="admin-column" style="display:none;">
+            <h2>Управление администраторами</h2>
+            <div class="admin-buttons">
+                <button id="createAdminBtn" class="btn btn-primary">+ Добавить администратора</button>
+                <button id="viewLogsBtn" class="btn">Просмотр логов</button>
+            </div>
+            <div id="adminsList"></div>
+        </div>
     </div>
-    <footer>Редактируйте вопросы, добавляйте изображения</footer>
 </div>
 
 <!-- Модальные окна -->
@@ -98,8 +116,13 @@
             currentUserRole = data.role;
             document.getElementById('loginContainer').style.display = 'none';
             document.getElementById('adminPanel').style.display = 'block';
-            document.getElementById('superAdminSection').style.display = currentUserRole === 'super_admin' ? 'block' : 'none';
-            if(currentUserRole === 'super_admin') loadAdminsList();
+            const superPanel = document.getElementById('superAdminPanel');
+            if(currentUserRole === 'super_admin') {
+                superPanel.style.display = 'block';
+                loadAdminsList();
+            } else {
+                superPanel.style.display = 'none';
+            }
             loadTests();
         } else {
             document.getElementById('loginContainer').style.display = 'block';
@@ -137,7 +160,7 @@
             const admins = await fetchJson('/api/users-list');
             const container = document.getElementById('adminsList');
             if(!admins.length) { container.innerHTML = '<p>Нет администраторов</p>'; return; }
-            container.innerHTML = `<table><thead><tr><th>Логин</th><th>Роль</th><th>Дата создания</th><th>Действия</th></tr></thead><tbody>${admins.map(a => `<tr><td>${escapeHtml(a.username)}</td><td>${escapeHtml(a.role)}</td><td>${new Date(a.created_at).toLocaleString()}</td><td>${a.username !== 'admin' ? `<button class="btn delete-admin" data-id="${a.id}">Удалить</button>` : ''}</td>`).join('')}</tbody></table>`;
+            container.innerHTML = `<tr><thead><tr><th>Логин</th><th>Роль</th><th>Дата создания</th><th>Действия</th></tr></thead><tbody>${admins.map(a => `<tr><td>${escapeHtml(a.username)}</td><td>${escapeHtml(a.role)}</td><td>${new Date(a.created_at).toLocaleString()}</td><td>${a.username !== 'admin' ? `<button class="btn delete-admin" data-id="${a.id}">Удалить</button>` : ''}</td>`).join('')}</tbody></tr>`;
             document.querySelectorAll('.delete-admin').forEach(btn => btn.onclick = async () => {
                 if(confirm('Удалить администратора?')) {
                     await fetchJson('/api/delete-admin', { method:'POST', body:JSON.stringify({ id: parseInt(btn.dataset.id) }) });
