@@ -1,21 +1,130 @@
-<!-- Добавить в head -->
-<script src="https://cdn.jsdelivr.net/npm/sortablejs@latest/Sortable.min.js"></script>
-
-<!-- В скрипте после загрузки списка вопросов -->
-let sortable = null;
-function initSortable() {
-    const container = document.getElementById('questionsListContainer');
-    if (container && sortable === null) {
-        sortable = new Sortable(container, {
-            handle: '.drag-handle',
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Управление вопросами</title>
+    <script src="https://cdn.jsdelivr.net/npm/sortablejs@latest/Sortable.min.js"></script>
+    <style>
+        *{margin:0;padding:0;box-sizing:border-box;font-family:system-ui,'Segoe UI','Inter',sans-serif;}
+        body{background:#f1f5f9;padding:2rem 1.5rem;min-height:100vh;}
+        .container{max-width:1100px;margin:0 auto;}
+        .back-link{display:inline-flex;align-items:center;gap:6px;background:white;padding:0.5rem 1rem;border-radius:40px;text-decoration:none;color:#1e293b;margin-bottom:1.5rem;border:1px solid #e2e8f0;}
+        .header-info{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;margin-bottom:2rem;gap:1rem;}
+        .test-title-text{font-size:1.8rem;font-weight:700;color:#0f172a;}
+        .edit-title-btn{background:none;border:none;font-size:1.2rem;cursor:pointer;padding:0.3rem 0.6rem;border-radius:30px;}
+        .title-edit-form{display:flex;gap:10px;align-items:center;}
+        .title-input{padding:0.5rem 1rem;font-size:1.3rem;border:2px solid #3b82f6;border-radius:40px;outline:none;}
+        .btn{border:none;padding:0.6rem 1.4rem;border-radius:40px;font-weight:600;cursor:pointer;}
+        .btn-primary{background:#3b82f6;color:white;}
+        .btn-outline{background:white;border:1px solid #cbd5e1;}
+        .btn-sm{padding:0.4rem 1rem;font-size:0.8rem;}
+        .btn-danger{background:#fee2e2;color:#b91c1c;}
+        .questions-grid{display:flex;flex-direction:column;gap:1rem;}
+        .question-card{background:white;border-radius:24px;padding:1.2rem 1.5rem;border:1px solid #e2e8f0;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;cursor:grab;}
+        .question-card:active{cursor:grabbing;}
+        .question-preview{flex:1;}
+        .question-preview h3{font-size:1.1rem;font-weight:600;margin-bottom:6px;}
+        .question-meta{font-size:0.75rem;color:#475569;display:flex;gap:12px;}
+        .empty-questions{background:white;border-radius:2rem;padding:3rem;text-align:center;color:#64748b;}
+        .modal{display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);justify-content:center;align-items:center;z-index:1000;}
+        .modal-content{background:white;border-radius:32px;padding:2rem;max-width:600px;width:90%;max-height:80%;overflow-y:auto;}
+        .task-item{border:1px solid #e2e8f0;border-radius:16px;padding:0.8rem;margin-bottom:0.8rem;cursor:pointer;}
+        .task-item:hover{background:#f8fafc;}
+        .toolbar{display:flex;gap:1rem;margin-bottom:1rem;justify-content:flex-end;}
+    </style>
+</head>
+<body>
+<div class="container">
+    <div class="toolbar"><button id="exportDbBtn" class="btn btn-outline">Сохранить БД в файл</button><label class="btn btn-outline">Загрузить БД из файла<input type="file" id="importDbInput" accept=".db" style="display:none;"></label></div>
+    <a href="index.html" class="back-link">← На главную</a>
+    <div class="header-info">
+        <div class="test-title-section"><div id="testTitleContainer"></div><div class="test-badge" id="testIdBadge"></div></div>
+        <div><button class="btn btn-outline" id="manageTestBtn">Управление тестом</button><button class="btn btn-outline" id="addFromBaseBtn">Добавить из базы</button><button class="btn btn-primary" id="createNewQuestionBtn">Создать вопрос</button></div>
+    </div>
+    <div id="questionsListContainer" class="questions-grid"></div>
+</div>
+<div id="taskModal" class="modal"><div class="modal-content"><h3>Выберите задание из базы</h3><div id="tasksListModal"></div><button id="closeTaskModal" class="btn">Закрыть</button></div></div>
+<script>
+    let currentTestId=null, currentTest=null, isEditingTitle=false;
+    async function fetchJson(url, options) { const res = await fetch(url, options); if (!res.ok) throw new Error(await res.text()); return res.json(); }
+    async function loadTestFromUrl(){
+        const params=new URLSearchParams(location.search);
+        currentTestId=params.get('testId');
+        if(!currentTestId){document.getElementById('testTitleContainer').innerHTML='<span style="color:red">Ошибка</span>';return null;}
+        const tests=await fetchJson('/api/tests',{method:'GET'});
+        const test=tests.find(t=>t.id===currentTestId);
+        if(!test){document.getElementById('testTitleContainer').innerHTML='<span style="color:red">Тест не найден</span>';return null;}
+        currentTest=test;
+        renderTestTitle();
+        document.getElementById('testIdBadge').innerText=`ID: ${test.id.slice(0,8)}`;
+        renderQuestionsList();
+        return test;
+    }
+    function renderTestTitle(){
+        const container=document.getElementById('testTitleContainer');
+        if(!currentTest)return;
+        if(isEditingTitle){
+            container.innerHTML=`<div class="title-edit-form"><input type="text" id="editTitleInput" class="title-input" value="${escapeHtml(currentTest.title)}" autofocus><button class="btn btn-success btn-sm" id="saveTitleBtn">Сохранить</button><button class="btn btn-outline btn-sm" id="cancelTitleBtn">Отмена</button></div>`;
+            document.getElementById('saveTitleBtn').onclick=async()=>{const newTitle=document.getElementById('editTitleInput').value.trim();if(!newTitle){alert('Введите название');return;}let tests=await fetchJson('/api/tests',{method:'GET'});const idx=tests.findIndex(t=>t.id===currentTestId);if(idx!==-1){tests[idx].title=newTitle;await fetchJson('/api/tests',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(tests)});currentTest=tests[idx];isEditingTitle=false;renderTestTitle();}};
+            document.getElementById('cancelTitleBtn').onclick=()=>{isEditingTitle=false;renderTestTitle();};
+        }else{
+            container.innerHTML=`<div><span class="test-title-text">${escapeHtml(currentTest.title)}</span><button class="edit-title-btn" id="editTitleBtn">✏️</button></div>`;
+            document.getElementById('editTitleBtn')?.onclick=()=>{isEditingTitle=true;renderTestTitle();};
+        }
+    }
+    async function renderQuestionsList(){
+        const container=document.getElementById('questionsListContainer');
+        if(!currentTest){container.innerHTML='<div class="empty-questions">Тест не загружен</div>';return;}
+        const qs=currentTest.questions||[];
+        if(!qs.length){container.innerHTML='<div class="empty-questions">Вопросов нет. Создайте первый.</div>';return;}
+        container.innerHTML=qs.map((q,idx)=>`<div class="question-card" data-qid="${q.id}"><div class="question-preview"><h3>${escapeHtml(q.titleQuestion||"Без заголовка")}</h3><div class="question-meta"><span>Вопрос #${idx+1}</span><span>Правильных ответов: ${(q.correctIndices?.length||q.answers?.filter(a=>a.isCorrect).length||0)}</span><span>${q.requireFileAttachment?'Требует файл':'Без файла'}</span></div></div><div><button class="btn btn-outline btn-sm edit-question" data-qid="${q.id}">Редактировать</button> <button class="btn btn-danger btn-sm delete-question" data-qid="${q.id}">Удалить</button></div></div>`).join('');
+        document.querySelectorAll('.edit-question').forEach(btn=>btn.onclick=()=>location.href=`edit-question.html?testId=${currentTestId}&questionId=${btn.dataset.qid}`);
+        document.querySelectorAll('.delete-question').forEach(btn=>btn.onclick=async()=>{if(confirm('Удалить вопрос?')){let tests=await fetchJson('/api/tests',{method:'GET'});const idx=tests.findIndex(t=>t.id===currentTestId);if(idx!==-1){tests[idx].questions=tests[idx].questions.filter(q=>q.id!==btn.dataset.qid);await fetchJson('/api/tests',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(tests)});currentTest=tests[idx];renderQuestionsList();}}});
+        // Drag & drop сортировка
+        new Sortable(container, {
             animation: 150,
-            onEnd: function() {
-                // после перетаскивания обновляем порядок в DOM, но не сохраняем автоматически
-                document.getElementById('saveOrderBtn').style.display = 'inline-block';
+            onEnd: async function() {
+                const newOrder = [];
+                document.querySelectorAll('.question-card').forEach(card => newOrder.push(card.getAttribute('data-qid')));
+                let tests = await fetchJson('/api/tests', { method: 'GET' });
+                const testIdx = tests.findIndex(t => t.id === currentTestId);
+                if (testIdx !== -1) {
+                    const reordered = newOrder.map(id => tests[testIdx].questions.find(q => q.id === id));
+                    tests[testIdx].questions = reordered;
+                    await fetchJson('/api/tests', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(tests) });
+                    currentTest = tests[testIdx];
+                    showToast('Порядок вопросов сохранён');
+                }
             }
         });
     }
-}
-// В renderQuestionsList после отрисовки вызвать initSortable() и добавить кнопку "Сохранить порядок"
-// В каждом question-card добавить <span class="drag-handle">⋮⋮</span>
-// При сохранении порядка собрать новые ID вопросов и перезаписать массив currentTest.questions
+    function showToast(msg){const t=document.createElement('div');t.style.cssText='position:fixed;bottom:20px;right:20px;background:#10b981;color:white;padding:12px 20px;border-radius:40px;z-index:1000';t.textContent=msg;document.body.appendChild(t);setTimeout(()=>t.remove(),3000);}
+    function escapeHtml(s){if(!s)return '';return s.replace(/[&<>]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[m]));}
+    document.getElementById('createNewQuestionBtn').onclick=()=>location.href=`edit-question.html?testId=${currentTestId}&mode=new`;
+    document.getElementById('manageTestBtn').onclick=()=>location.href=`manage-test.html?testId=${currentTestId}`;
+    const modal=document.getElementById('taskModal');
+    document.getElementById('addFromBaseBtn').onclick=async()=>{
+        const tasks=await fetchJson('/api/tasks-base',{method:'GET'});
+        const container=document.getElementById('tasksListModal');
+        if(!tasks.length)container.innerHTML='<p>Нет заданий</p>';
+        else{
+            container.innerHTML=tasks.map((t,idx)=>`<div class="task-item" data-idx="${idx}"><strong>${escapeHtml(t.title)}</strong><br>Вариантов: ${t.answerOptions?.length||0}</div>`).join('');
+            document.querySelectorAll('.task-item').forEach(el=>el.onclick=async()=>{
+                const idx=parseInt(el.dataset.idx);
+                const task=tasks[idx];
+                if(confirm(`Добавить "${task.title}"?`)){
+                    const newQuestion={id:'q_'+Date.now()+'_'+Math.random().toString(36).substr(2,6),titleQuestion:task.title,editorData:task.editorData,answers:task.answers,answerOptions:task.answerOptions,correctIndices:task.correctIndices,requireFileAttachment:task.requireFileAttachment||false};
+                    let tests=await fetchJson('/api/tests',{method:'GET'});
+                    const testIdx=tests.findIndex(t=>t.id===currentTestId);
+                    if(testIdx!==-1){if(!tests[testIdx].questions)tests[testIdx].questions=[];tests[testIdx].questions.push(newQuestion);await fetchJson('/api/tests',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(tests)});currentTest=tests[testIdx];renderQuestionsList();showToast('Задание добавлено');modal.style.display='none';}
+                }
+            });
+        }
+        modal.style.display='flex';
+    };
+    document.getElementById('closeTaskModal').onclick=()=>modal.style.display='none';
+    document.getElementById('exportDbBtn').onclick=()=>window.location.href='/api/export-db';
+    document.getElementById('importDbInput').onchange=async(e)=>{if(e.target.files.length){const fd=new FormData();fd.append('db',e.target.files[0]);await fetch('/api/import-db',{method:'POST',body:fd});alert('База импортирована');location.reload();}};
+    loadTestFromUrl();
+</script>
+</body>
+</html>
