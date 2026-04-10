@@ -4,9 +4,9 @@
     <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Управление пользователями</title>
     <style>
         *{margin:0;padding:0;box-sizing:border-box;font-family:system-ui,'Segoe UI','Inter',sans-serif;}
-        body{background:#f1f5f9;padding:2rem 1.5rem;}
+        body{background:#f1f5f9;padding:2rem;}
         .container{max-width:1200px;margin:0 auto;}
-        .back-link{display:inline-flex;align-items:center;gap:6px;background:white;padding:0.5rem 1rem;border-radius:40px;text-decoration:none;color:#1e293b;margin-bottom:1.5rem;border:1px solid #e2e8f0;}
+        .back-link{display:inline-block;background:white;padding:0.5rem 1rem;border-radius:40px;text-decoration:none;color:#1e293b;margin-bottom:1.5rem;border:1px solid #e2e8f0;}
         .card{background:white;border-radius:32px;padding:1.8rem;margin-bottom:2rem;box-shadow:0 4px 12px rgba(0,0,0,0.05);}
         h2{font-size:1.5rem;margin-bottom:1rem;}
         .btn{border:none;padding:0.5rem 1.2rem;border-radius:40px;font-weight:600;cursor:pointer;background:#e2e8f0;}
@@ -32,7 +32,7 @@
 <script>
     let groups=[], users=[], selectedFilterGroup="";
     async function fetchJson(url, options={}) {
-        const res = await fetch(url, options);
+        const res = await fetch(url, {...options, headers:{'Content-Type':'application/json'}});
         if(!res.ok) throw new Error(await res.text());
         return res.json();
     }
