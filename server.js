@@ -30,7 +30,6 @@ if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir);
 // Файл с данными администратора
 const adminFile = path.join(dataDir, 'admin.json');
 
-// Инициализация администратора по умолчанию
 async function initAdmin() {
     if (!fs.existsSync(adminFile)) {
         const hash = await bcrypt.hash('admin', 10);
@@ -40,7 +39,6 @@ async function initAdmin() {
 }
 initAdmin();
 
-// Вспомогательные функции для работы с JSON-файлами
 function readJSON(file) {
     const filePath = path.join(dataDir, file);
     if (!fs.existsSync(filePath)) return [];
@@ -52,99 +50,74 @@ function writeJSON(file, data) {
 }
 
 // ========== API авторизации ==========
-
-// Проверка сессии
 app.get('/api/check-session', (req, res) => {
-    if (req.session.user) {
-        res.json({ authenticated: true });
-    } else {
-        res.json({ authenticated: false });
-    }
+    res.json({ authenticated: !!req.session.user });
 });
 
-// Вход
 app.post('/api/login', async (req, res) => {
     const { username, password } = req.body;
     const admin = JSON.parse(fs.readFileSync(adminFile, 'utf8'));
-    if (username !== admin.username) {
-        return res.status(401).json({ error: 'Неверный логин или пароль' });
-    }
+    if (username !== admin.username) return res.status(401).json({ error: 'Неверный логин или пароль' });
     const match = await bcrypt.compare(password, admin.password_hash);
-    if (!match) {
-        return res.status(401).json({ error: 'Неверный логин или пароль' });
-    }
+    if (!match) return res.status(401).json({ error: 'Неверный логин или пароль' });
     req.session.user = { username: admin.username };
     res.json({ success: true });
 });
 
-// Выход
 app.post('/api/logout', (req, res) => {
     req.session.destroy();
     res.json({ success: true });
 });
 
-// Смена пароля
 app.post('/api/change-password', async (req, res) => {
     if (!req.session.user) return res.status(401).json({ error: 'Не авторизован' });
     const { oldPassword, newPassword } = req.body;
     const admin = JSON.parse(fs.readFileSync(adminFile, 'utf8'));
     const match = await bcrypt.compare(oldPassword, admin.password_hash);
-    if (!match) {
-        return res.status(401).json({ error: 'Неверный текущий пароль' });
-    }
+    if (!match) return res.status(401).json({ error: 'Неверный текущий пароль' });
     const newHash = await bcrypt.hash(newPassword, 10);
     fs.writeFileSync(adminFile, JSON.stringify({ username: admin.username, password_hash: newHash }));
     res.json({ success: true });
 });
 
-// Middleware для проверки авторизации в API
 function isAuthenticated(req, res, next) {
     if (req.session.user) return next();
     res.status(401).json({ error: 'Не авторизован' });
 }
 
-// ========== Защищённые API ==========
-app.get('/api/tests', isAuthenticated, (req, res) => {
-    const tests = readJSON('tests.json');
-    res.json(tests);
+// ========== API данных ==========
+app.get('/api/tests', isAuthenticated, (req, res) => res.json(readJSON('tests.json')));
+app.post('/api/tests', isAuthenticated, (req, res) => { writeJSON('tests.json', req.body); res.json({ success: true }); });
+app.get('/api/users', isAuthenticated, (req, res) => res.json(readJSON('users.json')));
+app.post('/api/users', isAuthenticated, (req, res) => { writeJSON('users.json', req.body); res.json({ success: true }); });
+app.get('/api/tasks-base', isAuthenticated, (req, res) => res.json(readJSON('tasks_base.json')));
+app.post('/api/tasks-base', isAuthenticated, (req, res) => { writeJSON('tasks_base.json', req.body); res.json({ success: true }); });
+app.get('/api/sessions', isAuthenticated, (req, res) => res.json(readJSON('sessions.json')));
+app.post('/api/sessions', isAuthenticated, (req, res) => { writeJSON('sessions.json', req.body); res.json({ success: true }); });
+
+// ========== Экспорт / импорт всех данных ==========
+app.get('/api/export-data', isAuthenticated, (req, res) => {
+    const allData = {
+        tests: readJSON('tests.json'),
+        users: readJSON('users.json'),
+        tasks_base: readJSON('tasks_base.json'),
+        sessions: readJSON('sessions.json')
+    };
+    res.setHeader('Content-Disposition', 'attachment; filename="test_constructor_backup.json"');
+    res.setHeader('Content-Type', 'application/json');
+    res.send(JSON.stringify(allData, null, 2));
 });
 
-app.post('/api/tests', isAuthenticated, (req, res) => {
-    writeJSON('tests.json', req.body);
+app.post('/api/import-data', isAuthenticated, (req, res) => {
+    const { tests, users, tasks_base, sessions } = req.body;
+    if (tests !== undefined) writeJSON('tests.json', tests);
+    if (users !== undefined) writeJSON('users.json', users);
+    if (tasks_base !== undefined) writeJSON('tasks_base.json', tasks_base);
+    if (sessions !== undefined) writeJSON('sessions.json', sessions);
     res.json({ success: true });
 });
 
-app.get('/api/users', isAuthenticated, (req, res) => {
-    const users = readJSON('users.json');
-    res.json(users);
-});
-
-app.post('/api/users', isAuthenticated, (req, res) => {
-    writeJSON('users.json', req.body);
-    res.json({ success: true });
-});
-
-app.get('/api/tasks-base', isAuthenticated, (req, res) => {
-    const tasks = readJSON('tasks_base.json');
-    res.json(tasks);
-});
-
-app.post('/api/tasks-base', isAuthenticated, (req, res) => {
-    writeJSON('tasks_base.json', req.body);
-    res.json({ success: true });
-});
-
-app.get('/api/sessions', isAuthenticated, (req, res) => {
-    const sessions = readJSON('sessions.json');
-    res.json(sessions);
-});
-
-app.post('/api/sessions', isAuthenticated, (req, res) => {
-    writeJSON('sessions.json', req.body);
-    res.json({ success: true });
-});
-
-// ========== Публичные API (для учеников) ==========
+// Сессии учеников (без авторизации)
 app.post('/api/start-session', (req, res) => {
     const { testId, studentRegNumber, studentName } = req.body;
     const tests = readJSON('tests.json');
@@ -152,8 +125,7 @@ app.post('/api/start-session', (req, res) => {
     if (!test) return res.status(404).json({ error: 'Тест не найден' });
     const student = (test.students || []).find(s => s.registrationNumber === studentRegNumber);
     if (!student) return res.status(403).json({ error: 'Код участника не найден' });
-    const questions = test.questions || [];
-    const shuffledIds = [...questions].sort(() => Math.random() - 0.5).map(q => q.id);
+    const shuffledIds = [...(test.questions || [])].sort(() => Math.random() - 0.5).map(q => q.id);
     const endTime = Date.now() + (test.timeLimitMinutes || 60) * 60 * 1000;
     const sessionId = uuidv4();
     const sessions = readJSON('sessions.json');
