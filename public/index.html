@@ -13,10 +13,10 @@
         button{width:100%;background:#3b82f6;color:white;border:none;padding:0.8rem;border-radius:40px;font-weight:600;cursor:pointer;}
         .error{color:red;text-align:center;margin-top:1rem;}
         .admin-panel{display:none;max-width:1200px;margin:0 auto;padding:2rem;}
-        .header{display:flex;justify-content:space-between;align-items:center;margin-bottom:2rem;}
-        .btn{background:white;border:1px solid #cbd5e1;padding:0.5rem 1rem;border-radius:40px;cursor:pointer;}
+        .header{display:flex;justify-content:space-between;align-items:center;margin-bottom:2rem;flex-wrap:wrap;gap:1rem;}
+        .btn{background:white;border:1px solid #cbd5e1;padding:0.5rem 1rem;border-radius:40px;cursor:pointer;font-weight:500;}
         .btn-primary{background:#3b82f6;color:white;border:none;}
-        .test-card{background:white;border-radius:24px;padding:1rem;margin-bottom:1rem;display:flex;justify-content:space-between;align-items:center;}
+        .test-card{background:white;border-radius:24px;padding:1rem;margin-bottom:1rem;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:1rem;}
         .toolbar{display:flex;gap:1rem;margin-bottom:1rem;justify-content:flex-end;}
         .modal{display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);justify-content:center;align-items:center;z-index:1000;}
         .modal-content{background:white;border-radius:32px;padding:2rem;max-width:500px;width:90%;}
@@ -36,8 +36,6 @@
 <div class="admin-panel" id="adminPanel">
     <div class="toolbar">
         <button id="changePwdBtn" class="btn">Сменить пароль</button>
-        <button id="exportDbBtn" class="btn">Сохранить БД в файл</button>
-        <label class="btn">Загрузить БД из файла<input type="file" id="importDbInput" accept=".db" style="display:none;"></label>
         <button id="logoutBtn" class="btn">Выйти</button>
     </div>
     <div class="header">
@@ -57,7 +55,7 @@
 </div>
 
 <!-- Модальное окно смены пароля -->
-<div id="changePwdModal" class="modal"><div class="modal-content"><h3>Смена пароля</h3><input type="password" id="oldPwd" placeholder="Старый пароль"><input type="password" id="newPwd" placeholder="Новый пароль"><input type="password" id="confirmPwd" placeholder="Подтверждение"><div class="modal-buttons" style="margin-top:1rem;"><button id="cancelPwdBtn">Отмена</button><button id="savePwdBtn">Сохранить</button></div></div></div>
+<div id="changePwdModal" class="modal"><div class="modal-content"><h3>Смена пароля</h3><input type="password" id="oldPwd" placeholder="Старый пароль"><input type="password" id="newPwd" placeholder="Новый пароль"><input type="password" id="confirmPwd" placeholder="Подтверждение"><div style="margin-top:1rem;"><button id="cancelPwdBtn">Отмена</button><button id="savePwdBtn">Сохранить</button></div></div></div>
 
 <script>
     let currentRole = null;
@@ -75,6 +73,8 @@
             document.getElementById('adminPanel').style.display = 'block';
             if (currentRole === 'super_admin') {
                 document.getElementById('superAdminPanel').style.display = 'block';
+            } else {
+                document.getElementById('superAdminPanel').style.display = 'none';
             }
             loadTests();
         } else {
@@ -85,7 +85,7 @@
     async function loadTests() {
         const tests = await fetchJson('/api/tests', { method: 'GET' });
         const container = document.getElementById('testsList');
-        if (!tests.length) { container.innerHTML = '<div>Нет тестов. Создайте первый.</div>'; return; }
+        if (!tests.length) { container.innerHTML = '<div class="test-card">Нет тестов. Создайте первый.</div>'; return; }
         container.innerHTML = tests.map(test => `
             <div class="test-card">
                 <div><strong>${escapeHtml(test.title)}</strong><br>Вопросов: ${test.questions?.length || 0} | Время: ${test.timeLimitMinutes || 60} мин</div>
@@ -136,16 +136,6 @@
     };
     document.getElementById('manageAdminsBtn').onclick = () => location.href = 'admins.html';
     document.getElementById('viewLogsBtn').onclick = () => location.href = 'logs.html';
-    document.getElementById('exportDbBtn').onclick = () => window.location.href = '/api/export-db';
-    document.getElementById('importDbInput').onchange = async (e) => {
-        if(e.target.files.length) {
-            const formData = new FormData();
-            formData.append('db', e.target.files[0]);
-            await fetch('/api/import-db', { method: 'POST', body: formData });
-            alert('База импортирована, перезагрузите страницу');
-            location.reload();
-        }
-    };
     checkSession();
 </script>
 </body>
