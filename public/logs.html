@@ -9,7 +9,7 @@
         table{width:100%;border-collapse:collapse;background:white;border-radius:16px;overflow:hidden;}
         th,td{border:1px solid #e2e8f0;padding:0.75rem;text-align:left;}
         th{background:#f8fafc;}
-        .back-link{display:inline-block;margin-bottom:1rem;}
+        .back-link{display:inline-block;margin-bottom:1rem;color:#2563eb;text-decoration:none;}
     </style>
 </head>
 <body>
@@ -23,7 +23,7 @@
         const res = await fetch('/api/logs');
         const logs = await res.json();
         const tbody = document.getElementById('logsTbody');
-        tbody.innerHTML = logs.map(log => `<tr><td>${new Date(log.timestamp).toLocaleString()}</td><td>${escapeHtml(log.username)}</td><td>${escapeHtml(log.action)}</td><td>${escapeHtml(log.ip)}</td></tr>`).join('');
+        tbody.innerHTML = logs.map(log => `<tr><td>${new Date(log.timestamp).toLocaleString()}</td><td>${escapeHtml(log.username)}</td><td>${escapeHtml(log.action)}</td><td>${escapeHtml(log.ip)}</td>`).join('');
     }
     function escapeHtml(s) { if(!s) return ''; return s.replace(/[&<>]/g, m => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;' }[m])); }
     loadLogs();
