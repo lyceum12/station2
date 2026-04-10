@@ -6,40 +6,35 @@
     <title>Тест-конструктор | Панель учителя</title>
     <style>
         *{margin:0;padding:0;box-sizing:border-box;font-family:system-ui,'Segoe UI','Inter',sans-serif;}
-        body{background:#f1f5f9;padding:2rem 1.5rem;}
+        body{background:#f1f5f9;padding:2rem;}
         .container{max-width:1200px;margin:0 auto;}
-        .toolbar{display:flex;gap:1rem;margin-bottom:1rem;justify-content:flex-end;}
+        .header{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;margin-bottom:2rem;gap:1rem;}
+        h1{font-size:1.9rem;color:#0f172a;}
         .btn{background:white;border:1px solid #cbd5e1;padding:0.5rem 1rem;border-radius:40px;cursor:pointer;font-weight:500;}
         .btn-primary{background:#3b82f6;color:white;border:none;}
-        .header{display:flex;justify-content:space-between;align-items:center;margin-bottom:2rem;flex-wrap:wrap;gap:1rem;}
-        h1{font-size:1.9rem;color:#0f172a;}
         .test-list{display:flex;flex-direction:column;gap:1rem;}
         .test-card{background:white;border-radius:24px;padding:1rem;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:1rem;border:1px solid #e2e8f0;}
-        .test-info h3{font-size:1.2rem;margin-bottom:0.25rem;}
-        .test-info p{color:#475569;font-size:0.85rem;}
+        .test-info h3{font-size:1.1rem;margin-bottom:0.25rem;}
+        .test-info p{color:#475569;font-size:0.8rem;}
         .test-actions{display:flex;gap:0.5rem;}
-        @media (max-width:640px){.header{flex-direction:column;align-items:stretch;}}
+        .toolbar{display:flex;gap:1rem;margin-bottom:1rem;justify-content:flex-end;}
     </style>
 </head>
 <body>
 <div class="container">
     <div class="toolbar">
-        <button id="exportDbBtn" class="btn">Сохранить БД в файл</button>
-        <label class="btn">Загрузить БД из файла<input type="file" id="importDbInput" accept=".db" style="display:none;"></label>
+        <button id="exportBtn" class="btn">Экспорт данных</button>
+        <label class="btn">Импорт данных<input type="file" id="importInput" accept=".json" style="display:none;"></label>
     </div>
     <div class="header">
         <h1>Библиотека тестов</h1>
-        <div>
-            <button id="manageUsersBtn" class="btn">Управление пользователями</button>
-            <button id="manageTasksBaseBtn" class="btn">База заданий</button>
-            <button id="createTestBtn" class="btn btn-primary">Создать новый тест</button>
-        </div>
+        <div><button id="manageUsersBtn" class="btn">Управление пользователями</button><button id="manageTasksBaseBtn" class="btn">База заданий</button><button id="createTestBtn" class="btn btn-primary">Создать новый тест</button></div>
     </div>
     <div id="testsList" class="test-list"></div>
 </div>
 <script>
     async function fetchJson(url, options={}) {
-        const res = await fetch(url, options);
+        const res = await fetch(url, {...options, headers:{'Content-Type':'application/json'}});
         if(!res.ok) throw new Error(await res.text());
         return res.json();
     }
@@ -49,27 +44,13 @@
         if(!tests.length) { container.innerHTML = '<div class="test-card">Нет тестов. Создайте первый.</div>'; return; }
         container.innerHTML = tests.map(test => `
             <div class="test-card">
-                <div class="test-info">
-                    <h3>${escapeHtml(test.title)}</h3>
-                    <p>Вопросов: ${test.questions?.length||0} | Время: ${test.timeLimitMinutes||60} мин</p>
-                </div>
-                <div class="test-actions">
-                    <button class="btn edit-questions" data-id="${test.id}">Редактировать вопросы</button>
-                    <button class="btn manage-test" data-id="${test.id}">Управление</button>
-                    <button class="btn delete-test" data-id="${test.id}">Удалить</button>
-                </div>
+                <div class="test-info"><h3>${escapeHtml(test.title)}</h3><p>Вопросов: ${test.questions?.length||0} | Время: ${test.timeLimitMinutes||60} мин</p></div>
+                <div class="test-actions"><button class="btn edit-questions" data-id="${test.id}">Редактировать вопросы</button><button class="btn manage-test" data-id="${test.id}">Управление</button><button class="btn delete-test" data-id="${test.id}">Удалить</button></div>
             </div>
         `).join('');
         document.querySelectorAll('.edit-questions').forEach(btn => btn.onclick = () => location.href = `questions.html?testId=${btn.dataset.id}`);
         document.querySelectorAll('.manage-test').forEach(btn => btn.onclick = () => location.href = `manage-test.html?testId=${btn.dataset.id}`);
-        document.querySelectorAll('.delete-test').forEach(btn => btn.onclick = async () => {
-            if(confirm('Удалить тест?')) {
-                let tests2 = await fetchJson('/api/tests');
-                tests2 = tests2.filter(t => t.id !== btn.dataset.id);
-                await fetchJson('/api/tests', { method: 'POST', body: JSON.stringify(tests2) });
-                loadTests();
-            }
-        });
+        document.querySelectorAll('.delete-test').forEach(btn => btn.onclick = async () => { if(confirm('Удалить тест?')) { let tests2 = await fetchJson('/api/tests'); tests2 = tests2.filter(t => t.id !== btn.dataset.id); await fetchJson('/api/tests', { method: 'POST', body: JSON.stringify(tests2) }); loadTests(); } });
     }
     function escapeHtml(s) { if(!s) return ''; return s.replace(/[&<>]/g, m => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;' }[m])); }
     document.getElementById('createTestBtn').onclick = async () => {
@@ -82,15 +63,22 @@
     };
     document.getElementById('manageUsersBtn').onclick = () => location.href = 'users.html';
     document.getElementById('manageTasksBaseBtn').onclick = () => location.href = 'tasks-base.html';
-    document.getElementById('exportDbBtn').onclick = () => window.location.href = '/api/export-db';
-    document.getElementById('importDbInput').onchange = async (e) => {
-        if(e.target.files.length) {
-            const fd = new FormData();
-            fd.append('db', e.target.files[0]);
-            await fetch('/api/import-db', { method: 'POST', body: fd });
-            alert('База импортирована, перезагрузите страницу');
-            location.reload();
-        }
+    document.getElementById('exportBtn').onclick = async () => {
+        const data = await fetchJson('/api/export-all');
+        const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(blob);
+        link.download = 'test_constructor_data.json';
+        link.click();
+    };
+    document.getElementById('importInput').onchange = async (e) => {
+        if(!e.target.files.length) return;
+        const file = e.target.files[0];
+        const text = await file.text();
+        const data = JSON.parse(text);
+        await fetchJson('/api/import-all', { method: 'POST', body: JSON.stringify(data) });
+        alert('Данные импортированы, перезагрузите страницу');
+        location.reload();
     };
     loadTests();
 </script>
