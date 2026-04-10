@@ -27,31 +27,33 @@
         .answer-correct{width:24px;height:24px;}
         .add-answer{margin-top:12px;background:#eef2ff;border:none;padding:0.5rem 1rem;border-radius:40px;cursor:pointer;}
         .checkbox-group{margin:1rem 0;display:flex;align-items:center;gap:12px;}
+        .toolbar{display:flex;gap:1rem;margin-bottom:1rem;justify-content:flex-end;}
     </style>
 </head>
 <body>
 <div class="container">
+    <div class="toolbar"><button id="exportDbBtn" class="btn btn-outline">Сохранить БД в файл</button><label class="btn btn-outline">Загрузить БД из файла<input type="file" id="importDbInput" accept=".db" style="display:none;"></label></div>
     <a href="index.html" class="back-link">← На главную</a>
     <div class="card"><h2>База заданий</h2><button id="createTaskBtn" class="btn btn-primary">+ Создать задание</button><div id="tasksList" style="margin-top:1rem;"></div></div>
 </div>
-<div id="taskModal" class="modal"><div class="modal-content"><h3 id="modalTitle">Создание задания</h3><div class="form-group"><label>Заголовок задания</label><input type="text" id="taskTitle"></div><div class="form-group"><label>Текст задания</label><div class="editor-wrapper"><div id="editorjs"></div></div></div><div class="checkbox-group"><input type="checkbox" id="requireFile"><label>Требуется прикрепление файлов</label></div><div class="checkbox-group"><input type="checkbox" id="addToBase" checked><label>Добавить в базу заданий</label><span class="info-tip" style="font-size:0.7rem;color:#666;">(если выключено, задание не сохранится в базу, но останется в тесте)</span></div><div class="answers-section"><label>Варианты ответов (отметьте правильные)</label><div id="answersList"></div><button type="button" id="addAnswerBtn" class="add-answer">+ Добавить вариант</button></div><div class="modal-buttons" style="display:flex;justify-content:flex-end;gap:12px;margin-top:1rem;"><button id="cancelTaskBtn" class="btn">Отмена</button><button id="saveTaskBtn" class="btn btn-primary">Сохранить</button></div></div></div>
+<div id="taskModal" class="modal"><div class="modal-content"><h3 id="modalTitle">Создание задания</h3><div class="form-group"><label>Заголовок задания</label><input type="text" id="taskTitle"></div><div class="form-group"><label>Текст задания</label><div class="editor-wrapper"><div id="editorjs"></div></div></div><div class="checkbox-group"><input type="checkbox" id="requireFile"><label>Требуется прикрепление файлов</label></div><div class="checkbox-group"><input type="checkbox" id="addToBase" checked><label>Добавить в базу заданий</label><span style="font-size:0.7rem;color:#666;">(если выключено, задание не сохранится в базу, но останется в тесте)</span></div><div class="answers-section"><label>Варианты ответов (отметьте правильные)</label><div id="answersList"></div><button type="button" id="addAnswerBtn" class="add-answer">+ Добавить вариант</button></div><div class="modal-buttons" style="display:flex;justify-content:flex-end;gap:12px;margin-top:1rem;"><button id="cancelTaskBtn" class="btn">Отмена</button><button id="saveTaskBtn" class="btn btn-primary">Сохранить</button></div></div></div>
 <script>
     let tasks=[], currentTaskId=null, editorInstance=null, currentAnswers=[];
-    async function fetchTasks(){const r=await fetch('/api/tasks-base');return r.json();}
-    async function saveTasks(t){await fetch('/api/tasks-base',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(t)});}
-    async function load(){tasks=await fetchTasks();renderTasks();}
+    async function fetchJson(url, options) { const res = await fetch(url, options); if (!res.ok) throw new Error(await res.text()); return res.json(); }
+    async function load(){tasks=await fetchJson('/api/tasks-base',{method:'GET'});renderTasks();}
+    async function saveAndSync(){await fetchJson('/api/tasks-base',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(tasks)});}
     function renderTasks(){
         const container=document.getElementById('tasksList');
         if(!tasks.length){container.innerHTML='<p>Нет заданий. Создайте первое.</p>';return;}
         container.innerHTML=tasks.map((t,idx)=>`<div class="task-item"><div><strong>${escapeHtml(t.title)}</strong><br>Вариантов: ${t.answerOptions?.length||0}</div><div><button class="btn edit-task" data-idx="${idx}">Редактировать</button> <button class="btn delete-task" data-idx="${idx}" style="color:red;">Удалить</button></div></div>`).join('');
         document.querySelectorAll('.edit-task').forEach(btn=>btn.addEventListener('click',()=>{const idx=parseInt(btn.dataset.idx);openModal(tasks[idx],idx);}));
-        document.querySelectorAll('.delete-task').forEach(btn=>btn.addEventListener('click',async()=>{if(confirm('Удалить задание?')){tasks.splice(parseInt(btn.dataset.idx),1);await saveTasks(tasks);load();}}));
+        document.querySelectorAll('.delete-task').forEach(btn=>btn.addEventListener('click',async()=>{if(confirm('Удалить задание?')){tasks.splice(parseInt(btn.dataset.idx),1);await saveAndSync();load();}}));
     }
     function openModal(task,idx){
         currentTaskId=idx!==undefined?idx:null;
         document.getElementById('taskTitle').value=task?task.title:'';
         document.getElementById('requireFile').checked=task?(task.requireFileAttachment||false):false;
-        document.getElementById('addToBase').checked=true; // по умолчанию включено, при редактировании всегда true (или можно сохранять флаг)
+        document.getElementById('addToBase').checked=true;
         if(task?.editorData && editorInstance) editorInstance.render(task.editorData);
         else if(editorInstance) editorInstance.clear();
         currentAnswers=task?.answers?[...task.answers]:[];
@@ -119,13 +121,13 @@
         if(addToBase){
             if(currentTaskId!==null) tasks[currentTaskId]=newTask;
             else tasks.push(newTask);
-            await saveTasks(tasks);
+            await saveAndSync();
         }
         load();
         document.getElementById('taskModal').style.display='none';
         resetModal();
         if(addToBase) alert('Задание сохранено в базу');
-        else alert('Задание не добавлено в базу (только для текущего использования)');
+        else alert('Задание не добавлено в базу');
     }
     function resetModal(){
         document.getElementById('taskTitle').value='';
@@ -141,7 +143,9 @@
     document.getElementById('saveTaskBtn').addEventListener('click',saveCurrent);
     document.getElementById('cancelTaskBtn').addEventListener('click',()=>{document.getElementById('taskModal').style.display='none';resetModal();});
     function escapeHtml(s){if(!s)return '';return s.replace(/[&<>]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[m]));}
-    load(); initEditor();
+    document.getElementById('exportDbBtn').onclick=()=>window.location.href='/api/export-db';
+    document.getElementById('importDbInput').onchange=async(e)=>{if(e.target.files.length){const fd=new FormData();fd.append('db',e.target.files[0]);await fetch('/api/import-db',{method:'POST',body:fd});alert('База импортирована');location.reload();}};
+    initEditor(); load();
 </script>
 </body>
 </html>
