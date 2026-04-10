@@ -10,7 +10,6 @@ const { v4: uuidv4 } = require('uuid');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Middleware
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 app.use(express.static('public'));
@@ -21,47 +20,64 @@ app.use(session({
     cookie: { secure: false, httpOnly: true, maxAge: 1000 * 60 * 60 * 24 }
 }));
 
-// Папки
 const dataDir = path.join(__dirname, 'data');
 const uploadsDir = path.join(__dirname, 'uploads');
 if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir);
 if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir);
 
-// Файл с данными администратора
-const adminFile = path.join(dataDir, 'admin.json');
+// Файлы: администраторы и остальные данные
+const adminsFile = path.join(dataDir, 'admins.json');
+const adminFile = path.join(dataDir, 'admin.json'); // устаревший, будет удалён, но для совместимости оставим
 
-async function initAdmin() {
-    if (!fs.existsSync(adminFile)) {
+// Инициализация суперадминистратора (admin)
+async function initSuperAdmin() {
+    let admins = [];
+    if (fs.existsSync(adminsFile)) {
+        admins = JSON.parse(fs.readFileSync(adminsFile, 'utf8'));
+    }
+    const existing = admins.find(a => a.username === 'admin');
+    if (!existing) {
         const hash = await bcrypt.hash('admin', 10);
-        fs.writeFileSync(adminFile, JSON.stringify({ username: 'admin', password_hash: hash }));
-        console.log('Создан администратор: admin / admin');
+        admins.push({ id: 'admin', username: 'admin', password_hash: hash, role: 'super_admin' });
+        fs.writeFileSync(adminsFile, JSON.stringify(admins, null, 2));
+        console.log('Создан суперадминистратор: admin / admin');
+    }
+    // Для совместимости со старым файлом admin.json (если есть)
+    if (fs.existsSync(adminFile)) {
+        fs.unlinkSync(adminFile);
     }
 }
-initAdmin();
+initSuperAdmin();
 
+// Вспомогательные функции для работы с JSON-файлами данных (тесты, пользователи и т.д.)
 function readJSON(file) {
     const filePath = path.join(dataDir, file);
     if (!fs.existsSync(filePath)) return [];
     return JSON.parse(fs.readFileSync(filePath, 'utf8'));
 }
-
 function writeJSON(file, data) {
     fs.writeFileSync(path.join(dataDir, file), JSON.stringify(data, null, 2));
 }
 
 // ========== API авторизации ==========
 app.get('/api/check-session', (req, res) => {
-    res.json({ authenticated: !!req.session.user });
+    if (req.session.user) {
+        res.json({ authenticated: true, role: req.session.user.role });
+    } else {
+        res.json({ authenticated: false });
+    }
 });
 
 app.post('/api/login', async (req, res) => {
     const { username, password } = req.body;
-    const admin = JSON.parse(fs.readFileSync(adminFile, 'utf8'));
-    if (username !== admin.username) return res.status(401).json({ error: 'Неверный логин или пароль' });
+    if (!fs.existsSync(adminsFile)) return res.status(401).json({ error: 'Системная ошибка' });
+    const admins = JSON.parse(fs.readFileSync(adminsFile, 'utf8'));
+    const admin = admins.find(a => a.username === username);
+    if (!admin) return res.status(401).json({ error: 'Неверный логин или пароль' });
     const match = await bcrypt.compare(password, admin.password_hash);
     if (!match) return res.status(401).json({ error: 'Неверный логин или пароль' });
-    req.session.user = { username: admin.username };
-    res.json({ success: true });
+    req.session.user = { id: admin.id, username: admin.username, role: admin.role };
+    res.json({ success: true, role: admin.role });
 });
 
 app.post('/api/logout', (req, res) => {
@@ -72,20 +88,74 @@ app.post('/api/logout', (req, res) => {
 app.post('/api/change-password', async (req, res) => {
     if (!req.session.user) return res.status(401).json({ error: 'Не авторизован' });
     const { oldPassword, newPassword } = req.body;
-    const admin = JSON.parse(fs.readFileSync(adminFile, 'utf8'));
+    const admins = JSON.parse(fs.readFileSync(adminsFile, 'utf8'));
+    const admin = admins.find(a => a.id === req.session.user.id);
+    if (!admin) return res.status(401).json({ error: 'Пользователь не найден' });
     const match = await bcrypt.compare(oldPassword, admin.password_hash);
     if (!match) return res.status(401).json({ error: 'Неверный текущий пароль' });
     const newHash = await bcrypt.hash(newPassword, 10);
-    fs.writeFileSync(adminFile, JSON.stringify({ username: admin.username, password_hash: newHash }));
+    admin.password_hash = newHash;
+    fs.writeFileSync(adminsFile, JSON.stringify(admins, null, 2));
     res.json({ success: true });
 });
 
+// Middleware проверки авторизации
 function isAuthenticated(req, res, next) {
     if (req.session.user) return next();
     res.status(401).json({ error: 'Не авторизован' });
 }
+function isSuperAdmin(req, res, next) {
+    if (req.session.user && req.session.user.role === 'super_admin') return next();
+    res.status(403).json({ error: 'Доступ запрещён' });
+}
 
-// ========== API данных ==========
+// ========== API управления администраторами (только для super_admin) ==========
+app.get('/api/admins', isAuthenticated, isSuperAdmin, (req, res) => {
+    const admins = JSON.parse(fs.readFileSync(adminsFile, 'utf8'));
+    // Отправляем без паролей
+    const safe = admins.map(({ id, username, role }) => ({ id, username, role }));
+    res.json(safe);
+});
+
+app.post('/api/admins', isAuthenticated, isSuperAdmin, async (req, res) => {
+    const { username, password, role } = req.body;
+    if (!username || !password) return res.status(400).json({ error: 'Заполните логин и пароль' });
+    const admins = JSON.parse(fs.readFileSync(adminsFile, 'utf8'));
+    if (admins.find(a => a.username === username)) {
+        return res.status(400).json({ error: 'Логин уже существует' });
+    }
+    const hash = await bcrypt.hash(password, 10);
+    const newId = Date.now().toString() + '_' + Math.random().toString(36).substr(2, 6);
+    const newAdmin = { id: newId, username, password_hash: hash, role: role || 'admin' };
+    admins.push(newAdmin);
+    fs.writeFileSync(adminsFile, JSON.stringify(admins, null, 2));
+    res.json({ success: true });
+});
+
+app.delete('/api/admins/:id', isAuthenticated, isSuperAdmin, (req, res) => {
+    const id = req.params.id;
+    if (id === 'admin') return res.status(400).json({ error: 'Нельзя удалить главного администратора' });
+    let admins = JSON.parse(fs.readFileSync(adminsFile, 'utf8'));
+    const newAdmins = admins.filter(a => a.id !== id);
+    if (newAdmins.length === admins.length) return res.status(404).json({ error: 'Администратор не найден' });
+    fs.writeFileSync(adminsFile, JSON.stringify(newAdmins, null, 2));
+    res.json({ success: true });
+});
+
+app.post('/api/admins/:id/change-password', isAuthenticated, isSuperAdmin, async (req, res) => {
+    const { id } = req.params;
+    const { newPassword } = req.body;
+    if (!newPassword) return res.status(400).json({ error: 'Новый пароль не указан' });
+    let admins = JSON.parse(fs.readFileSync(adminsFile, 'utf8'));
+    const admin = admins.find(a => a.id === id);
+    if (!admin) return res.status(404).json({ error: 'Администратор не найден' });
+    const hash = await bcrypt.hash(newPassword, 10);
+    admin.password_hash = hash;
+    fs.writeFileSync(adminsFile, JSON.stringify(admins, null, 2));
+    res.json({ success: true });
+});
+
+// ========== Остальные API (тесты, пользователи, задания, сессии) – без изменений ==========
 app.get('/api/tests', isAuthenticated, (req, res) => res.json(readJSON('tests.json')));
 app.post('/api/tests', isAuthenticated, (req, res) => { writeJSON('tests.json', req.body); res.json({ success: true }); });
 app.get('/api/users', isAuthenticated, (req, res) => res.json(readJSON('users.json')));
@@ -95,7 +165,7 @@ app.post('/api/tasks-base', isAuthenticated, (req, res) => { writeJSON('tasks_ba
 app.get('/api/sessions', isAuthenticated, (req, res) => res.json(readJSON('sessions.json')));
 app.post('/api/sessions', isAuthenticated, (req, res) => { writeJSON('sessions.json', req.body); res.json({ success: true }); });
 
-// ========== Экспорт / импорт всех данных ==========
+// Экспорт/импорт данных
 app.get('/api/export-data', isAuthenticated, (req, res) => {
     const allData = {
         tests: readJSON('tests.json'),
@@ -209,5 +279,5 @@ app.get('/api/uploads/:filename', (req, res) => {
 
 app.listen(PORT, '0.0.0.0', () => {
     console.log(`Сервер запущен на http://localhost:${PORT}`);
-    console.log(`Логин: admin, пароль: admin`);
+    console.log(`Суперадминистратор: admin / admin`);
 });
