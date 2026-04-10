@@ -50,8 +50,6 @@
 <div id="taskModal" class="modal"><div class="modal-content"><h3>Выберите задание из базы</h3><div id="tasksListModal"></div><button id="closeTaskModal" class="btn" style="margin-top:1rem;">Закрыть</button></div></div>
 <script>
     let currentTestId=null, currentTest=null, isEditingTitle=false;
-    async function fetchTests(){const r=await fetch('/api/tests');return r.json();}
-    async function saveTests(t){await fetch('/api/tests',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(t)});}
     
     async function checkAuth() {
         const res = await fetch('/api/check-session');
@@ -62,7 +60,9 @@
         }
         return true;
     }
-    
+
+    async function fetchTests(){const r=await fetch('/api/tests');return r.json();}
+    async function saveTests(t){await fetch('/api/tests',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(t)});}
     async function loadTestFromUrl(){
         const params=new URLSearchParams(location.search);
         currentTestId=params.get('testId');
@@ -123,6 +123,7 @@
         modal.style.display='flex';
     });
     document.getElementById('closeTaskModal').addEventListener('click',()=>{modal.style.display='none';});
+    
     checkAuth().then(ok => { if(ok) loadTestFromUrl(); });
 </script>
 </body>
