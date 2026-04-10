@@ -45,6 +45,17 @@
     let editorInstance=null, currentTestId=null, currentQuestionId=null, currentAnswers=[];
     async function fetchTests(){const r=await fetch('/api/tests');return r.json();}
     async function saveTests(t){await fetch('/api/tests',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(t)});}
+    
+    async function checkAuth() {
+        const res = await fetch('/api/check-session');
+        const data = await res.json();
+        if (!data.authenticated) {
+            window.location.href = 'index.html';
+            return false;
+        }
+        return true;
+    }
+    
     async function init(){
         const params=new URLSearchParams(location.search);
         currentTestId=params.get('testId');
@@ -143,7 +154,7 @@
     document.getElementById('addAnswerBtn').addEventListener('click',()=>{currentAnswers.push({text:"",isCorrect:false});renderAnswersUI();});
     document.getElementById('saveQuestionBtn').addEventListener('click',saveQuestion);
     document.getElementById('cancelBtn').addEventListener('click',()=>{if(confirm('Отменить изменения?'))location.href=`questions.html?testId=${currentTestId}`;});
-    init();
+    checkAuth().then(ok => { if(ok) init(); });
 </script>
 </body>
 </html>
