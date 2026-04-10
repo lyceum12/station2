@@ -58,7 +58,7 @@
             margin-top: 1rem;
         }
 
-        /* Панель администратора (не центрируется) */
+        /* Панель администратора */
         .admin-panel {
             display: none;
             max-width: 1400px;
@@ -66,12 +66,22 @@
             padding: 1rem 2rem;
         }
 
-        /* Верхняя строка с кнопками пользователя */
-        .user-bar {
+        /* Верхняя строка: кнопки пользователя слева, панель администрирования справа */
+        .top-row {
             display: flex;
-            justify-content: flex-end;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
             gap: 1rem;
-            margin-bottom: 1rem;
+            margin-bottom: 1.5rem;
+        }
+        .user-buttons {
+            display: flex;
+            gap: 0.8rem;
+        }
+        .admin-panel-buttons {
+            display: flex;
+            gap: 0.8rem;
         }
 
         /* Строка с заголовком и основными кнопками */
@@ -93,60 +103,6 @@
             display: flex;
             gap: 0.8rem;
             flex-wrap: wrap;
-        }
-
-        /* Двухколоночная раскладка: тесты слева, админ-панель справа */
-        .dashboard {
-            display: flex;
-            gap: 2rem;
-            align-items: flex-start;
-        }
-        .tests-column {
-            flex: 2;
-            min-width: 0;
-        }
-        .admin-column {
-            flex: 1;
-            min-width: 250px;
-            background: white;
-            border-radius: 24px;
-            padding: 1.2rem;
-            border: 1px solid #e2e8f0;
-            box-shadow: 0 1px 2px rgba(0,0,0,0.05);
-        }
-        .admin-column h2 {
-            font-size: 1.2rem;
-            margin-bottom: 1rem;
-            padding-bottom: 0.5rem;
-            border-bottom: 1px solid #e2e8f0;
-        }
-        .admin-buttons {
-            display: flex;
-            flex-direction: column;
-            gap: 0.8rem;
-        }
-
-        /* Общие стили кнопок */
-        .btn {
-            background: white;
-            border: 1px solid #cbd5e1;
-            padding: 0.5rem 1rem;
-            border-radius: 40px;
-            cursor: pointer;
-            font-weight: 500;
-            transition: 0.2s;
-            text-align: center;
-        }
-        .btn-primary {
-            background: #3b82f6;
-            color: white;
-            border: none;
-        }
-        .btn-primary:hover {
-            background: #2563eb;
-        }
-        .btn-outline:hover {
-            background: #f8fafc;
         }
 
         /* Список тестов */
@@ -178,6 +134,29 @@
         .test-actions {
             display: flex;
             gap: 0.5rem;
+        }
+
+        /* Общие стили кнопок */
+        .btn {
+            background: white;
+            border: 1px solid #cbd5e1;
+            padding: 0.5rem 1rem;
+            border-radius: 40px;
+            cursor: pointer;
+            font-weight: 500;
+            transition: 0.2s;
+            text-align: center;
+        }
+        .btn-primary {
+            background: #3b82f6;
+            color: white;
+            border: none;
+        }
+        .btn-primary:hover {
+            background: #2563eb;
+        }
+        .btn-outline:hover {
+            background: #f8fafc;
         }
 
         /* Модальное окно */
@@ -214,10 +193,12 @@
             margin-top: 1rem;
         }
 
-        @media (max-width: 800px) {
+        @media (max-width: 700px) {
             .admin-panel { padding: 1rem; }
-            .dashboard { flex-direction: column; }
-            .admin-column { width: 100%; }
+            .top-row { flex-direction: column; align-items: stretch; }
+            .user-buttons, .admin-panel-buttons { justify-content: center; }
+            .main-bar { flex-direction: column; align-items: stretch; }
+            .main-buttons { justify-content: center; }
         }
     </style>
 </head>
@@ -233,10 +214,16 @@
 
     <!-- Панель администратора -->
     <div class="admin-panel" id="adminPanel">
-        <!-- Верхняя строка с кнопками пользователя -->
-        <div class="user-bar">
-            <button id="changePwdBtn" class="btn">Сменить пароль</button>
-            <button id="logoutBtn" class="btn">Выйти</button>
+        <!-- Верхняя строка: кнопки пользователя слева, панель администрирования справа -->
+        <div class="top-row">
+            <div class="user-buttons">
+                <button id="changePwdBtn" class="btn">Сменить пароль</button>
+                <button id="logoutBtn" class="btn">Выйти</button>
+            </div>
+            <div id="adminPanelButtons" class="admin-panel-buttons" style="display: none;">
+                <button id="manageAdminsBtn" class="btn">Управление администраторами</button>
+                <button id="viewLogsBtn" class="btn">Просмотр логов</button>
+            </div>
         </div>
 
         <!-- Строка с заголовком и основными кнопками -->
@@ -249,22 +236,8 @@
             </div>
         </div>
 
-        <!-- Двухколоночная область -->
-        <div class="dashboard">
-            <!-- Левая колонка: список тестов -->
-            <div class="tests-column">
-                <div id="testsList" class="test-list"></div>
-            </div>
-
-            <!-- Правая колонка: панель администрирования (только для super_admin) -->
-            <div id="adminColumn" class="admin-column" style="display: none;">
-                <h2>Администрирование</h2>
-                <div class="admin-buttons">
-                    <button id="manageAdminsBtn" class="btn">Управление администраторами</button>
-                    <button id="viewLogsBtn" class="btn">Просмотр логов</button>
-                </div>
-            </div>
-        </div>
+        <!-- Список тестов -->
+        <div id="testsList" class="test-list"></div>
     </div>
 
     <!-- Модальное окно смены пароля -->
@@ -299,9 +272,9 @@
                     document.getElementById('loginContainer').style.display = 'none';
                     document.getElementById('adminPanel').style.display = 'block';
                     if (currentRole === 'super_admin') {
-                        document.getElementById('adminColumn').style.display = 'block';
+                        document.getElementById('adminPanelButtons').style.display = 'flex';
                     } else {
-                        document.getElementById('adminColumn').style.display = 'none';
+                        document.getElementById('adminPanelButtons').style.display = 'none';
                     }
                     loadTests();
                 } else {
