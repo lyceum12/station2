@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Тест-конструктор | Вход</title>
+    <title>Тест-конструктор | Панель учителя</title>
     <style>
         * {
             margin: 0;
@@ -20,7 +20,7 @@
             align-items: center;
         }
 
-        /* Стили для входа */
+        /* Форма входа */
         .login-container {
             background: white;
             border-radius: 32px;
@@ -29,13 +29,11 @@
             max-width: 90%;
             box-shadow: 0 8px 20px rgba(0,0,0,0.1);
         }
-
         .login-container h1 {
             font-size: 1.8rem;
             margin-bottom: 1.5rem;
             text-align: center;
         }
-
         .login-container input {
             width: 100%;
             padding: 0.8rem;
@@ -43,7 +41,6 @@
             border: 1px solid #cbd5e1;
             border-radius: 40px;
         }
-
         .login-container button {
             width: 100%;
             background: #3b82f6;
@@ -54,7 +51,6 @@
             font-weight: 600;
             cursor: pointer;
         }
-
         .error {
             color: red;
             text-align: center;
@@ -70,14 +66,34 @@
             padding: 2rem;
         }
 
-        /* Верхняя панель с кнопками */
-        .top-bar {
+        /* Строка с кнопками пользователя (справа) */
+        .user-bar {
             display: flex;
             justify-content: flex-end;
             gap: 1rem;
-            margin-bottom: 2rem;
+            margin-bottom: 1.5rem;
         }
 
+        /* Строка с основными кнопками управления */
+        .action-bar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 1rem;
+            margin-bottom: 2rem;
+        }
+        .action-bar h1 {
+            font-size: 1.9rem;
+            color: #0f172a;
+        }
+        .action-buttons {
+            display: flex;
+            gap: 0.8rem;
+            flex-wrap: wrap;
+        }
+
+        /* Общие стили кнопок */
         .btn {
             background: white;
             border: 1px solid #cbd5e1;
@@ -87,40 +103,16 @@
             font-weight: 500;
             transition: 0.2s;
         }
-
         .btn-primary {
             background: #3b82f6;
             color: white;
             border: none;
         }
-
         .btn-primary:hover {
             background: #2563eb;
         }
-
         .btn-outline:hover {
             background: #f8fafc;
-        }
-
-        /* Заголовок и основные кнопки */
-        .main-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            flex-wrap: wrap;
-            gap: 1rem;
-            margin-bottom: 2rem;
-        }
-
-        .main-header h1 {
-            font-size: 1.9rem;
-            color: #0f172a;
-        }
-
-        .action-buttons {
-            display: flex;
-            gap: 1rem;
-            flex-wrap: wrap;
         }
 
         /* Список тестов */
@@ -130,7 +122,6 @@
             gap: 1rem;
             margin-bottom: 2rem;
         }
-
         .test-card {
             background: white;
             border-radius: 24px;
@@ -143,17 +134,14 @@
             border: 1px solid #e2e8f0;
             box-shadow: 0 1px 2px rgba(0,0,0,0.05);
         }
-
         .test-info h3 {
             font-size: 1.2rem;
             margin-bottom: 0.25rem;
         }
-
         .test-info p {
             color: #475569;
             font-size: 0.85rem;
         }
-
         .test-actions {
             display: flex;
             gap: 0.5rem;
@@ -166,12 +154,10 @@
             padding: 1.5rem;
             margin-top: 1rem;
         }
-
         .super-section h2 {
             font-size: 1.3rem;
             margin-bottom: 1rem;
         }
-
         .super-buttons {
             display: flex;
             gap: 1rem;
@@ -191,7 +177,6 @@
             align-items: center;
             z-index: 1000;
         }
-
         .modal-content {
             background: white;
             border-radius: 32px;
@@ -199,7 +184,6 @@
             max-width: 500px;
             width: 90%;
         }
-
         .modal-content input {
             width: 100%;
             padding: 0.8rem;
@@ -207,7 +191,6 @@
             border: 1px solid #cbd5e1;
             border-radius: 40px;
         }
-
         .modal-buttons {
             display: flex;
             justify-content: flex-end;
@@ -217,7 +200,7 @@
 
         @media (max-width: 640px) {
             .admin-panel { padding: 1rem; }
-            .main-header { flex-direction: column; align-items: stretch; }
+            .action-bar { flex-direction: column; align-items: stretch; }
             .action-buttons { justify-content: center; }
             .test-card { flex-direction: column; align-items: stretch; }
             .test-actions { justify-content: center; }
@@ -234,16 +217,16 @@
         <div id="errorMsg" class="error"></div>
     </div>
 
-    <!-- Панель администратора (скрыта до входа) -->
+    <!-- Панель администратора -->
     <div class="admin-panel" id="adminPanel">
-        <!-- Верхняя панель с кнопками пользователя -->
-        <div class="top-bar">
+        <!-- Верхняя строка с кнопками пользователя (справа) -->
+        <div class="user-bar">
             <button id="changePwdBtn" class="btn">Сменить пароль</button>
             <button id="logoutBtn" class="btn">Выйти</button>
         </div>
 
-        <!-- Основной заголовок и кнопки -->
-        <div class="main-header">
+        <!-- Строка с заголовком и основными кнопками -->
+        <div class="action-bar">
             <h1>Библиотека тестов</h1>
             <div class="action-buttons">
                 <button id="manageUsersBtn" class="btn">Управление пользователями</button>
@@ -255,7 +238,7 @@
         <!-- Список тестов -->
         <div id="testsList" class="test-list"></div>
 
-        <!-- Панель суперадминистратора (видна только для super_admin) -->
+        <!-- Панель суперадминистратора -->
         <div id="superAdminPanel" class="super-section" style="display: none;">
             <h2>Администрирование</h2>
             <div class="super-buttons">
