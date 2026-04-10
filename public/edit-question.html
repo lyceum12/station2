@@ -14,7 +14,7 @@
         .card{background:white;border-radius:32px;padding:1.8rem;box-shadow:0 8px 20px rgba(0,0,0,0.05);}
         .form-group{margin-bottom:1.5rem;}
         label{font-weight:600;display:block;margin-bottom:0.5rem;}
-        input[type="text"]{width:100%;padding:0.8rem 1rem;border:1px solid #cbd5e1;border-radius:20px;font-size:1rem;}
+        input[type="text"], input[type="number"]{width:100%;padding:0.8rem 1rem;border:1px solid #cbd5e1;border-radius:20px;font-size:1rem;}
         .editor-wrapper{border:1px solid #e2e8f0;border-radius:24px;padding:0.5rem;background:#fefefe;}
         .answers-section{background:#f9fafb;border-radius:24px;padding:1.2rem;margin-top:1rem;}
         .answer-item{display:flex;align-items:center;gap:12px;margin-bottom:12px;background:white;padding:8px 12px;border-radius:60px;border:1px solid #e2e8f0;}
@@ -35,6 +35,7 @@
     <div class="card">
         <h2 id="formTitle">Создание вопроса</h2>
         <div class="form-group"><label>Заголовок вопроса</label><input type="text" id="questionTitle"></div>
+        <div class="form-group"><label>Баллы за вопрос</label><input type="number" id="questionPoints" value="1" min="0.5" step="0.5"></div>
         <div class="form-group"><label>Текст вопроса (можно вставить изображения)</label><div class="editor-wrapper"><div id="editorjs"></div></div><div class="info-tip">Для вставки изображения нажмите на плюс и выберите "Изображение"</div></div>
         <div class="checkbox-group"><input type="checkbox" id="requireFileAttachment"><label>Требуется прикрепление файлов к этому вопросу</label></div>
         <div class="answers-section"><label>Варианты ответов (отметьте правильные)</label><div id="answersList"></div><button type="button" id="addAnswerBtn" class="add-answer">+ Добавить вариант ответа</button></div>
@@ -43,17 +44,6 @@
 </div>
 <script>
     let editorInstance=null, currentTestId=null, currentQuestionId=null, currentAnswers=[];
-    
-    async function checkAuth() {
-        const res = await fetch('/api/check-session');
-        const data = await res.json();
-        if (!data.authenticated) {
-            window.location.href = 'index.html';
-            return false;
-        }
-        return true;
-    }
-
     async function fetchTests(){const r=await fetch('/api/tests');return r.json();}
     async function saveTests(t){await fetch('/api/tests',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(t)});}
     async function init(){
@@ -78,6 +68,7 @@
     }
     function loadQuestionData(q){
         document.getElementById('questionTitle').value=q.titleQuestion||'';
+        document.getElementById('questionPoints').value=q.points||1;
         document.getElementById('requireFileAttachment').checked=q.requireFileAttachment||false;
         if(q.editorData && editorInstance) editorInstance.render(q.editorData);
         else if(q.editorData) window.pendingEditorData=q.editorData;
@@ -87,6 +78,7 @@
         if(editorInstance) editorInstance.clear();
         currentAnswers=[];renderAnswersUI();
         document.getElementById('questionTitle').value='';
+        document.getElementById('questionPoints').value=1;
         document.getElementById('requireFileAttachment').checked=false;
     }
     function renderAnswersUI(){
@@ -136,7 +128,9 @@
         if(currentAnswers.some(a=>!a.text.trim())){alert('Все варианты должны содержать текст');return;}
         if(!currentAnswers.some(a=>a.isCorrect)){alert('Выберите хотя бы один правильный ответ');return;}
         let editorData=editorInstance?await editorInstance.save():{blocks:[]};
-        const newQuestion={id:currentQuestionId||('q_'+Date.now()+'_'+Math.random().toString(36).substr(2,6)),titleQuestion:title,editorData,answers:currentAnswers.map(a=>({text:a.text,isCorrect:a.isCorrect})),answerOptions:currentAnswers.map(a=>a.text),correctIndices:currentAnswers.reduce((arr,a,idx)=>{if(a.isCorrect)arr.push(idx);return arr},[]),requireFileAttachment:document.getElementById('requireFileAttachment').checked,hasEditorContent:true};
+        const points = parseFloat(document.getElementById('questionPoints').value);
+        if(isNaN(points) || points <= 0) { alert('Укажите корректное количество баллов (число >0)'); return; }
+        const newQuestion={id:currentQuestionId||('q_'+Date.now()+'_'+Math.random().toString(36).substr(2,6)),titleQuestion:title,points:points,editorData,answers:currentAnswers.map(a=>({text:a.text,isCorrect:a.isCorrect})),answerOptions:currentAnswers.map(a=>a.text),correctIndices:currentAnswers.reduce((arr,a,idx)=>{if(a.isCorrect)arr.push(idx);return arr},[]),requireFileAttachment:document.getElementById('requireFileAttachment').checked,hasEditorContent:true};
         let tests=await fetchTests();
         const testIdx=tests.findIndex(t=>t.id===currentTestId);
         if(testIdx===-1){alert('Тест не найден');return;}
@@ -154,8 +148,7 @@
     document.getElementById('addAnswerBtn').addEventListener('click',()=>{currentAnswers.push({text:"",isCorrect:false});renderAnswersUI();});
     document.getElementById('saveQuestionBtn').addEventListener('click',saveQuestion);
     document.getElementById('cancelBtn').addEventListener('click',()=>{if(confirm('Отменить изменения?'))location.href=`questions.html?testId=${currentTestId}`;});
-    
-    checkAuth().then(ok => { if(ok) init(); });
+    init();
 </script>
 </body>
 </html>
