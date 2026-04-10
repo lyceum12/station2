@@ -27,12 +27,10 @@
         .btn-save{background:#3b82f6;color:white;border:none;padding:0.8rem 2rem;border-radius:40px;font-weight:600;cursor:pointer;}
         .btn-cancel{background:white;border:1px solid #cbd5e1;padding:0.8rem 2rem;border-radius:40px;cursor:pointer;}
         .info-tip{font-size:0.75rem;color:#475569;margin-top:6px;}
-        .toolbar{display:flex;gap:1rem;margin-bottom:1rem;justify-content:flex-end;}
     </style>
 </head>
 <body>
 <div class="container">
-    <div class="toolbar"><button id="exportDbBtn" class="btn btn-outline">Сохранить БД в файл</button><label class="btn btn-outline">Загрузить БД из файла<input type="file" id="importDbInput" accept=".db" style="display:none;"></label></div>
     <a href="questions.html" id="backLink" class="back-link">← Вернуться к вопросам</a>
     <div class="card">
         <h2 id="formTitle">Создание вопроса</h2>
@@ -144,8 +142,6 @@
     document.getElementById('addAnswerBtn').addEventListener('click',()=>{currentAnswers.push({text:"",isCorrect:false});renderAnswersUI();});
     document.getElementById('saveQuestionBtn').addEventListener('click',saveQuestion);
     document.getElementById('cancelBtn').addEventListener('click',()=>{if(confirm('Отменить изменения?'))location.href=`questions.html?testId=${currentTestId}`;});
-    document.getElementById('exportDbBtn').onclick=()=>window.location.href='/api/export-db';
-    document.getElementById('importDbInput').onchange=async(e)=>{if(e.target.files.length){const fd=new FormData();fd.append('db',e.target.files[0]);await fetch('/api/import-db',{method:'POST',body:fd});alert('База импортирована');location.reload();}};
     init();
 </script>
 </body>
