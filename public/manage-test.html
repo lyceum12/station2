@@ -23,6 +23,9 @@
         .incorrect{color:red;font-weight:bold;}
         .question-detail{margin-bottom:1rem;border-bottom:1px solid #e2e8f0;padding-bottom:0.5rem;}
         .file-link{background:#e2e8f0;padding:2px 8px;border-radius:20px;display:inline-block;margin:2px;font-size:0.8rem;}
+        .toast{position:fixed;bottom:20px;right:20px;background:#10b981;color:white;padding:12px 20px;border-radius:40px;z-index:1000;animation:fadein 0.3s;}
+        .toast.error{background:#ef4444;}
+        @keyframes fadein{from{opacity:0;transform:translateX(100%);}to{opacity:1;transform:translateX(0);}}
     </style>
 </head>
 <body>
@@ -36,17 +39,7 @@
 <div id="reevaluateModal" class="modal"><div class="modal-content"><h3>Ручное переоценивание</h3><div id="reevaluateList"></div><button id="saveReevalBtn" class="btn btn-primary">Сохранить изменения</button><button id="cancelReevalBtn" class="btn">Отмена</button></div></div>
 <script>
     let currentTestId=null, currentTest=null, groups=[], allUsers=[];
-
-    async function checkAuth() {
-        const res = await fetch('/api/check-session');
-        const data = await res.json();
-        if (!data.authenticated) {
-            window.location.href = 'index.html';
-            return false;
-        }
-        return true;
-    }
-
+    function showToast(msg, isError=false){const t=document.createElement('div');t.className='toast'+(isError?' error':'');t.textContent=msg;document.body.appendChild(t);setTimeout(()=>t.remove(),3000);}
     async function fetchTests(){const r=await fetch('/api/tests');return r.json();}
     async function saveTests(t){await fetch('/api/tests',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(t)});}
     async function fetchUsers(){const r=await fetch('/api/users');return r.json();}
@@ -54,9 +47,9 @@
         const tests=await fetchTests();
         const params=new URLSearchParams(location.search);
         currentTestId=params.get('testId');
-        if(!currentTestId){alert('Тест не указан');location.href='index.html';return;}
+        if(!currentTestId){showToast('Тест не указан',true);location.href='index.html';return;}
         currentTest=tests.find(t=>t.id===currentTestId);
-        if(!currentTest){alert('Тест не найден');location.href='index.html';return;}
+        if(!currentTest){showToast('Тест не найден',true);location.href='index.html';return;}
         document.getElementById('backLink').href=`questions.html?testId=${currentTestId}`;
         document.getElementById('timeLimit').value=currentTest.timeLimitMinutes||60;
         document.getElementById('showAnswersCheckbox').checked=currentTest.showCorrectAnswersAfterTest||false;
@@ -74,15 +67,15 @@
     function renderStudents(){
         const tbody=document.getElementById('studentsTbody');
         const students=currentTest.students||[];
-        if(!students.length){tbody.innerHTML='<tr><td colspan="3">Нет учеников</td>';return;}
+        if(!students.length){tbody.innerHTML='<tr><td colspan="3">Нет учеников</td></tr>';return;}
         tbody.innerHTML=students.map((s,idx)=>`<tr><td><input type="text" class="student-name" value="${escapeHtml(s.fullName)}" data-idx="${idx}"></td><td><input type="text" class="student-reg" value="${escapeHtml(s.registrationNumber)}" data-idx="${idx}"></td><td><button class="btn save-student" data-idx="${idx}">Сохранить</button> <button class="btn delete-student" data-idx="${idx}" style="color:red;">Удалить</button></td></tr>`).join('');
-        document.querySelectorAll('.save-student').forEach(btn=>btn.addEventListener('click',async()=>{const idx=parseInt(btn.dataset.idx);const row=btn.closest('tr');const name=row.querySelector('.student-name').value.trim();const reg=row.querySelector('.student-reg').value.trim();if(name&&reg){let tests=await fetchTests();const test=tests.find(t=>t.id===currentTestId);if(test){if(!test.students)test.students=[];test.students[idx]={fullName:name,registrationNumber:reg};await saveTests(tests);currentTest=test;renderStudents();}}else alert('Заполните поля');}));
-        document.querySelectorAll('.delete-student').forEach(btn=>btn.addEventListener('click',async()=>{if(confirm('Удалить ученика?')){let tests=await fetchTests();const test=tests.find(t=>t.id===currentTestId);if(test&&test.students){test.students.splice(parseInt(btn.dataset.idx),1);await saveTests(tests);currentTest=test;renderStudents();}}}));
+        document.querySelectorAll('.save-student').forEach(btn=>btn.addEventListener('click',async()=>{const idx=parseInt(btn.dataset.idx);const row=btn.closest('tr');const name=row.querySelector('.student-name').value.trim();const reg=row.querySelector('.student-reg').value.trim();if(name&&reg){let tests=await fetchTests();const test=tests.find(t=>t.id===currentTestId);if(test){if(!test.students)test.students=[];test.students[idx]={fullName:name,registrationNumber:reg};await saveTests(tests);currentTest=test;renderStudents();}}else showToast('Заполните поля',true);}));
+        document.querySelectorAll('.delete-student').forEach(btn=>btn.addEventListener('click',async()=>{if(confirm('Удалить ученика?')){let tests=await fetchTests();const test=tests.find(t=>t.id===currentTestId);if(test&&test.students){test.students.splice(parseInt(btn.dataset.idx),1);await saveTests(tests);currentTest=test;renderStudents();showToast('Ученик удалён');}}}));
     }
-    document.getElementById('addStudentBtn').addEventListener('click',async()=>{const name=prompt('ФИО');if(!name)return;const reg=prompt('Код участника');if(!reg)return;let tests=await fetchTests();const test=tests.find(t=>t.id===currentTestId);if(test){if(!test.students)test.students=[];test.students.push({fullName:name.trim(),registrationNumber:reg.trim()});await saveTests(tests);currentTest=test;renderStudents();}});
-    document.getElementById('addFromGroupBtn').addEventListener('click',async()=>{const groupName=document.getElementById('groupSelect').value;if(!groupName){alert('Выберите группу');return;}const usersInGroup=allUsers.filter(u=>u.group===groupName);if(!usersInGroup.length){alert('В группе нет пользователей');return;}let tests=await fetchTests();const test=tests.find(t=>t.id===currentTestId);if(test){if(!test.students)test.students=[];for(let u of usersInGroup)if(!test.students.some(s=>s.registrationNumber===u.registrationNumber))test.students.push({fullName:u.fullName,registrationNumber:u.registrationNumber});await saveTests(tests);currentTest=test;renderStudents();alert(`Добавлено ${usersInGroup.length} учеников`);}});
-    document.getElementById('saveTimeBtn').addEventListener('click',async()=>{const nt=parseInt(document.getElementById('timeLimit').value);if(isNaN(nt)||nt<1){alert('Введите корректное время');return;}let tests=await fetchTests();const test=tests.find(t=>t.id===currentTestId);if(test){test.timeLimitMinutes=nt;await saveTests(tests);currentTest=test;alert('Время сохранено');}});
-    document.getElementById('saveShowAnswersBtn').addEventListener('click',async()=>{const show=document.getElementById('showAnswersCheckbox').checked;let tests=await fetchTests();const test=tests.find(t=>t.id===currentTestId);if(test){test.showCorrectAnswersAfterTest=show;await saveTests(tests);currentTest=test;alert('Настройка сохранена');}});
+    document.getElementById('addStudentBtn').addEventListener('click',async()=>{const name=prompt('ФИО');if(!name)return;const reg=prompt('Код участника');if(!reg)return;let tests=await fetchTests();const test=tests.find(t=>t.id===currentTestId);if(test){if(!test.students)test.students=[];test.students.push({fullName:name.trim(),registrationNumber:reg.trim()});await saveTests(tests);currentTest=test;renderStudents();showToast('Ученик добавлен');}});
+    document.getElementById('addFromGroupBtn').addEventListener('click',async()=>{const groupName=document.getElementById('groupSelect').value;if(!groupName){showToast('Выберите группу',true);return;}const usersInGroup=allUsers.filter(u=>u.group===groupName);if(!usersInGroup.length){showToast('В группе нет пользователей',true);return;}let tests=await fetchTests();const test=tests.find(t=>t.id===currentTestId);if(test){if(!test.students)test.students=[];for(let u of usersInGroup)if(!test.students.some(s=>s.registrationNumber===u.registrationNumber))test.students.push({fullName:u.fullName,registrationNumber:u.registrationNumber});await saveTests(tests);currentTest=test;renderStudents();showToast(`Добавлено ${usersInGroup.length} учеников`);}});
+    document.getElementById('saveTimeBtn').addEventListener('click',async()=>{const nt=parseInt(document.getElementById('timeLimit').value);if(isNaN(nt)||nt<1){showToast('Введите корректное время',true);return;}let tests=await fetchTests();const test=tests.find(t=>t.id===currentTestId);if(test){test.timeLimitMinutes=nt;await saveTests(tests);currentTest=test;showToast('Время сохранено');}});
+    document.getElementById('saveShowAnswersBtn').addEventListener('click',async()=>{const show=document.getElementById('showAnswersCheckbox').checked;let tests=await fetchTests();const test=tests.find(t=>t.id===currentTestId);if(test){test.showCorrectAnswersAfterTest=show;await saveTests(tests);currentTest=test;showToast('Настройка сохранена');}});
     
     function isAnswerCorrect(question, userAnswerText, overrideFlag){
         if(overrideFlag!==undefined) return overrideFlag;
@@ -93,14 +86,16 @@
         return userSelected.length===correctIndices.length && userSelected.every(i=>correctIndices.includes(i));
     }
     function calculateScoreWithOverride(result, questions){
-        let correct=0;
+        let totalPoints=0, earnedPoints=0;
         for(let ans of result.answers){
             const q=questions.find(qq=>qq.id===ans.questionId);
             if(!q) continue;
-            const isCorrect=ans.isCorrectOverride !== undefined ? ans.isCorrectOverride : isAnswerCorrect(q, ans.answerText);
-            if(isCorrect) correct++;
+            const points=q.points||1;
+            totalPoints+=points;
+            const isCorrect=ans.isCorrectOverride!==undefined?ans.isCorrectOverride:isAnswerCorrect(q,ans.answerText);
+            if(isCorrect) earnedPoints+=points;
         }
-        return {correct,total:questions.length};
+        return {earned:earnedPoints,total:totalPoints};
     }
     async function renderResults(){
         const container=document.getElementById('resultsList');
@@ -110,7 +105,7 @@
         let filtered=results;
         if(filterGroup) filtered=results.filter(r=>allUsers.find(u=>u.registrationNumber===r.studentRegNumber)?.group===filterGroup);
         if(!filtered.length){container.innerHTML='<p>Нет результатов</p>';return;}
-        container.innerHTML=`<table><thead><tr><th>Ученик</th><th>Код</th><th>Группа</th><th>Дата</th><th>Баллы</th><th>Действия</th></tr></thead><tbody>${filtered.map((r,idx)=>{const origIdx=currentTest.results.findIndex(rr=>rr.finishedAt===r.finishedAt&&rr.studentRegNumber===r.studentRegNumber);const score=calculateScoreWithOverride(r,questions);const group=allUsers.find(u=>u.registrationNumber===r.studentRegNumber)?.group||'Без группы';return `<tr><td>${escapeHtml(r.studentName)}</td><td>${escapeHtml(r.studentRegNumber)}</td><td>${escapeHtml(group)}</td><td>${new Date(r.finishedAt).toLocaleString()}</td><td>${score.correct}/${score.total}</td><td><button class="btn view-result" data-idx="${origIdx}">Просмотр</button> <button class="btn reevaluate-result" data-idx="${origIdx}">Переоценить</button></td></tr>`;}).join('')}</tbody></table>`;
+        container.innerHTML=`<table><thead><tr><th>Ученик</th><th>Код</th><th>Группа</th><th>Дата</th><th>Баллы</th><th>Действия</th></tr></thead><tbody>${filtered.map((r,idx)=>{const origIdx=currentTest.results.findIndex(rr=>rr.finishedAt===r.finishedAt&&rr.studentRegNumber===r.studentRegNumber);const score=calculateScoreWithOverride(r,questions);const group=allUsers.find(u=>u.registrationNumber===r.studentRegNumber)?.group||'Без группы';return `<tr><td>${escapeHtml(r.studentName)}</td><td>${escapeHtml(r.studentRegNumber)}</td><td>${escapeHtml(group)}</td><td>${new Date(r.finishedAt).toLocaleString()}</td><td>${score.earned}/${score.total}</td><td><button class="btn view-result" data-idx="${origIdx}">Просмотр</button> <button class="btn reevaluate-result" data-idx="${origIdx}">Переоценить</button></td></tr>`;}).join('')}</tbody></table>`;
         document.querySelectorAll('.view-result').forEach(btn=>btn.addEventListener('click',()=>{const idx=parseInt(btn.dataset.idx);showResultDetails(currentTest.results[idx]);}));
         document.querySelectorAll('.reevaluate-result').forEach(btn=>btn.addEventListener('click',()=>{const idx=parseInt(btn.dataset.idx);openReevaluateModal(currentTest.results[idx], idx);}));
     }
@@ -120,14 +115,15 @@
         let html=`<p><strong>Ученик:</strong> ${escapeHtml(result.studentName)}</p><p><strong>Код:</strong> ${escapeHtml(result.studentRegNumber)}</p><p><strong>Завершён:</strong> ${new Date(result.finishedAt).toLocaleString()}</p><hr>`;
         for(let i=0;i<questions.length;i++){
             const q=questions[i];
+            const points=q.points||1;
             const userAns=result.answers.find(a=>a.questionId===q.id);
             const userAnswerText=userAns?userAns.answerText:'(нет ответа)';
             let correctIndices=q.correctIndices||q.answers?.reduce((arr,a,idx)=>{if(a.isCorrect)arr.push(idx);return arr},[]);
             const correctOptions=(q.answerOptions||[]).filter((_,idx)=>correctIndices.includes(idx)).join(', ');
-            const isCorrect=userAns?.isCorrectOverride !== undefined ? userAns.isCorrectOverride : isAnswerCorrect(q, userAns?.answerText);
+            const isCorrect=userAns?.isCorrectOverride!==undefined?userAns.isCorrectOverride:isAnswerCorrect(q,userAns?.answerText);
             const statusClass=isCorrect?'correct':'incorrect';
-            const statusText=isCorrect?'Правильно':'Неправильно';
-            html+=`<div class="question-detail"><strong>Вопрос ${i+1}: ${escapeHtml(q.titleQuestion)}</strong><br>Ответ: ${escapeHtml(userAnswerText)}<br>Правильный: ${escapeHtml(correctOptions)}<br><span class="${statusClass}">${statusText}</span>`;
+            const statusText=isCorrect?'Правильно (+'+points+' балл'+')':'Неправильно (0 баллов)';
+            html+=`<div class="question-detail"><strong>Вопрос ${i+1}: ${escapeHtml(q.titleQuestion)} (${points} балл.)</strong><br>Ответ: ${escapeHtml(userAnswerText)}<br>Правильный: ${escapeHtml(correctOptions)}<br><span class="${statusClass}">${statusText}</span>`;
             if(userAns?.files?.length) html+=`<div><strong>Файлы:</strong> ${userAns.files.map(f=>`<a href="${f.dataURL}" download="${f.name}" target="_blank" class="file-link">${escapeHtml(f.name)}</a>`).join(' ')}</div>`;
             html+=`</div>`;
         }
@@ -142,9 +138,9 @@
             const userAns=result.answers.find(a=>a.questionId===q.id);
             const userAnswerText=userAns?userAns.answerText:'';
             const currentOverride=userAns?.isCorrectOverride;
-            const isCorrectDefault=isAnswerCorrect(q, userAnswerText);
-            const isChecked = (currentOverride !== undefined) ? currentOverride : isCorrectDefault;
-            html+=`<div style="margin-bottom:1rem;"><strong>${i+1}. ${escapeHtml(q.titleQuestion)}</strong><br>Ответ: ${escapeHtml(userAnswerText)}<br><label><input type="checkbox" class="correct-checkbox" data-qidx="${i}" ${isChecked?'checked':''}> Считать правильным</label></div>`;
+            const isCorrectDefault=isAnswerCorrect(q,userAnswerText);
+            const isChecked=(currentOverride!==undefined)?currentOverride:isCorrectDefault;
+            html+=`<div style="margin-bottom:1rem;"><strong>${i+1}. ${escapeHtml(q.titleQuestion)} (${q.points||1} балл.)</strong><br>Ответ: ${escapeHtml(userAnswerText)}<br><label><input type="checkbox" class="correct-checkbox" data-qidx="${i}" ${isChecked?'checked':''}> Считать правильным</label></div>`;
         }
         container.innerHTML=html;
         modal.style.display='flex';
@@ -167,7 +163,7 @@
                 await saveTests(tests);
                 currentTest=tests[testIdx];
                 renderResults();
-                alert('Результаты переоценены');
+                showToast('Результаты переоценены');
             }
             modal.style.display='none';
         };
@@ -175,8 +171,7 @@
     }
     document.getElementById('closeModalBtn').addEventListener('click',()=>document.getElementById('answersModal').style.display='none');
     function escapeHtml(s){if(!s)return '';return s.replace(/[&<>]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[m]));}
-    
-    checkAuth().then(ok => { if(ok) loadAll(); });
+    loadAll();
 </script>
 </body>
 </html>
