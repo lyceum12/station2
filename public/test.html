@@ -19,7 +19,7 @@
         .stats-count{font-size:24px;font-weight:800;}
         .questions-nav{position:absolute;left:50%;transform:translateX(-50%);top:-12px;z-index:25;background:#F8FAFC;padding:5px;border-bottom:1px solid #CBD5E1;overflow-x:auto;white-space:nowrap;max-width:60%;}
         .buttons-wrapper{display:inline-flex;gap:8px;}
-        .q-btn{width:42px;height:24px;border:none;border-radius:6px;cursor:pointer;background:#F0F0F0;font-weight:700;}
+        .q-btn{width:42px;height:24px;border:none;border-radius:6px;cursor:pointer;background:#F0F0F0;font-weight:700;font-size:14px;}
         .q-btn.answered{background:#C0C0C0;}
         .q-btn.current{background:#FFD7CC;box-shadow:0 0 0 2px #FF8A5C;}
         .content-area{flex:1;padding:16px 20px;overflow-y:auto;}
@@ -39,12 +39,16 @@
         .result-card{background:white;border-radius:24px;padding:1rem;margin-bottom:1rem;border:1px solid #e2e8f0;}
         .result-correct{color:#10b981;font-weight:bold;}
         .result-incorrect{color:#ef4444;font-weight:bold;}
+        .toast{position:fixed;bottom:20px;right:20px;background:#10b981;color:white;padding:12px 20px;border-radius:40px;z-index:1000;animation:fadein 0.3s;}
+        .toast.error{background:#ef4444;}
+        @keyframes fadein{from{opacity:0;transform:translateX(100%);}to{opacity:1;transform:translateX(0);}}
         @media (max-width:768px){.timer{font-size:18px;}.kim-info{font-size:14px;}.q-btn{width:32px;font-size:11px;}.answer-textbox{min-height:80px;}}
     </style>
 </head>
 <body><div class="app-window" id="appWindow"></div></body>
 <script>
     let currentSessionId=null, currentTest=null, questionsOrder=[], currentIndex=0, timerInterval=null, finished=false, sessionAnswers={};
+    function showToast(msg, isError=false){const t=document.createElement('div');t.className='toast'+(isError?' error':'');t.textContent=msg;document.body.appendChild(t);setTimeout(()=>t.remove(),3000);}
     async function fetchTests(){const r=await fetch('/api/tests');return r.json();}
     async function getSessions(){const r=await fetch('/api/sessions');return r.json();}
     async function saveSessions(s){await fetch('/api/sessions',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(s)});}
@@ -282,9 +286,11 @@
     async function buildResultsPage(){
         const showDetails=currentTest.showCorrectAnswersAfterTest||false;
         const questions=currentTest.questions||[];
-        let correctCount=0, details=[];
+        let totalPoints=0, earnedPoints=0, details=[];
         for(let i=0;i<questions.length;i++){
             const q=questions[i];
+            const points=q.points||1;
+            totalPoints+=points;
             const userAns=sessionAnswers[q.id];
             const userText=userAns?.text||'(нет ответа)';
             let correctIndices=q.correctIndices||q.answers?.reduce((arr,a,idx)=>{if(a.isCorrect)arr.push(idx);return arr},[]);
@@ -297,18 +303,18 @@
                 for(let j=0;j<opts.length;j++) if(opts[j].toLowerCase()===userLow) sel.push(j);
                 isCorrect=sel.length===correctIndices.length && sel.every(idx=>correctIndices.includes(idx));
             }
-            if(isCorrect) correctCount++;
-            details.push({title:q.titleQuestion,userAnswer:userText,correctAnswer:correctOpts,isCorrect});
+            if(isCorrect) earnedPoints+=points;
+            details.push({title:q.titleQuestion,userAnswer:userText,correctAnswer:correctOpts,isCorrect,points});
         }
-        const total=questions.length, percent=Math.round((correctCount/total)*100);
-        let html=`<div class="results-container"><h1>Результаты тестирования</h1><p><strong>Ученик:</strong> ${escapeHtml(currentTest.students?.find(s=>s.registrationNumber===localStorage.getItem('quiz_session_student_reg'))?.fullName||'')}</p><p><strong>Ваш результат:</strong> ${correctCount} из ${total} (${percent}%)</p><hr>`;
+        const percent=Math.round((earnedPoints/totalPoints)*100);
+        let html=`<div class="results-container"><h1>Результаты тестирования</h1><p><strong>Ученик:</strong> ${escapeHtml(currentTest.students?.find(s=>s.registrationNumber===localStorage.getItem('quiz_session_student_reg'))?.fullName||'')}</p><p><strong>Ваш результат:</strong> ${earnedPoints} из ${totalPoints} (${percent}%)</p><hr>`;
         if(showDetails){
             html+=`<h2>Разбор вопросов</h2>`;
             for(let i=0;i<details.length;i++){
                 const d=details[i];
                 const cls=d.isCorrect?'result-correct':'result-incorrect';
-                const txt=d.isCorrect?'Верно':'Неверно';
-                html+=`<div class="result-card"><strong>Вопрос ${i+1}: ${escapeHtml(d.title)}</strong><br>Ваш ответ: ${escapeHtml(d.userAnswer)}<br>Правильный ответ: ${escapeHtml(d.correctAnswer)}<br><span class="${cls}">${txt}</span></div>`;
+                const txt=d.isCorrect?`Верно (+${d.points} балл${d.points!==1?'а':''})`:`Неверно (0 баллов)`;
+                html+=`<div class="result-card"><strong>Вопрос ${i+1}: ${escapeHtml(d.title)} (${d.points} балл.)</strong><br>Ваш ответ: ${escapeHtml(d.userAnswer)}<br>Правильный ответ: ${escapeHtml(d.correctAnswer)}<br><span class="${cls}">${txt}</span></div>`;
             }
         } else html+=`<p>Показ правильных ответов отключён учителем.</p>`;
         html+=`<button id="restartBtn" style="margin-top:2rem;background:#3b82f6;color:white;border:none;padding:0.8rem 2rem;border-radius:40px;">Завершить</button></div>`;
