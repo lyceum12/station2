@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Логи системы</title>
+    <style>
+        *{margin:0;padding:0;box-sizing:border-box;font-family:system-ui,sans-serif;}
+        body{background:#f1f5f9;padding:2rem;}
+        .container{max-width:1200px;margin:0 auto;}
+        .back-link{display:inline-block;margin-bottom:1.5rem;color:#3b82f6;text-decoration:none;}
+        .card{background:white;border-radius:32px;padding:1.5rem;}
+        table{width:100%;border-collapse:collapse;}
+        th,td{border:1px solid #e2e8f0;padding:0.75rem;text-align:left;}
+        th{background:#f8fafc;}
+    </style>
+</head>
+<body>
+<div class="container">
+    <a href="dashboard.html" class="back-link">← На главную</a>
+    <div class="card">
+        <h2>Журнал событий</h2>
+        <table>
+            <thead><tr><th>Время</th><th>IP</th><th>Пользователь</th><th>Действие</th><th>Детали</th></tr></thead>
+            <tbody id="logsTable"></tbody>
+        </table>
+    </div>
+</div>
+<script>
+    async function loadLogs() {
+        const res = await fetch('/api/logs');
+        if (!res.ok) { alert('Доступ запрещён'); window.location.href = 'dashboard.html'; return; }
+        const logs = await res.json();
+        const tbody = document.getElementById('logsTable');
+        tbody.innerHTML = logs.slice().reverse().map(l => `
+            <tr>
+                <td>${new Date(l.timestamp).toLocaleString()}</td>
+                <td>${escapeHtml(l.ip)}</td>
+                <td>${escapeHtml(l.user)}</td>
+                <td>${escapeHtml(l.action)}</td>
+                <td>${escapeHtml(l.details)}</td>
+            </tr>
+        `).join('');
+    }
+    function escapeHtml(s) { return s.replace(/[&<>]/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[m])); }
+    loadLogs();
+</script>
+</body>
+</html>
