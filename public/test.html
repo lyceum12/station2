@@ -19,7 +19,7 @@
         .stats-count{font-size:24px;font-weight:800;}
         .questions-nav{position:absolute;left:50%;transform:translateX(-50%);top:-12px;z-index:25;background:#F8FAFC;padding:5px;border-bottom:1px solid #CBD5E1;overflow-x:auto;white-space:nowrap;max-width:60%;}
         .buttons-wrapper{display:inline-flex;gap:8px;}
-        .q-btn{width:42px;height:24px;border:none;border-radius:6px;cursor:pointer;background:#F0F0F0;font-weight:700;}
+        .q-btn{width:42px;height:24px;border:none;border-radius:6px;cursor:pointer;background:#F0F0F0;font-weight:700;font-size:14px;}
         .q-btn.answered{background:#C0C0C0;}
         .q-btn.current{background:#FFD7CC;box-shadow:0 0 0 2px #FF8A5C;}
         .content-area{flex:1;padding:16px 20px;overflow-y:auto;}
@@ -44,36 +44,51 @@
 </head>
 <body><div class="app-window" id="appWindow"></div></body>
 <script>
-    let currentSessionId=null, currentTest=null, questionsOrder=[], currentIndex=0, timerInterval=null, finished=false;
-    async function fetchTests(){const r=await fetch('/api/tests');return r.json();}
+    let currentSessionId=null, currentTest=null, questionsOrder=[], currentIndex=0, timerInterval=null, finished=false, sessionAnswers={};
+    async function fetchJson(url, options) { const res = await fetch(url, options); if (!res.ok) throw new Error(await res.text()); return res.json(); }
     async function startSession(testId, regNumber, studentName){
-        const r=await fetch('/api/start-session',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({testId,studentRegNumber:regNumber,studentName})});
-        if(!r.ok){const err=await r.json();throw new Error(err.error);}
-        const data=await r.json();
-        currentSessionId=data.sessionId;
-        localStorage.setItem('quiz_session_id',currentSessionId);
-        return data;
+        let sessions=await fetchJson('/api/sessions',{method:'GET'});
+        const tests=await fetchJson('/api/tests',{method:'GET'});
+        const test=tests.find(t=>t.id===testId);
+        if(!test) throw new Error('Тест не найден');
+        const questions=test.questions||[];
+        const shuffledIds=[...questions].sort(()=>Math.random()-0.5).map(q=>q.id);
+        const endTime=Date.now()+(test.timeLimitMinutes||60)*60*1000;
+        const sessionId='sess_'+Date.now()+'_'+Math.random().toString(36).substr(2,8);
+        const session={id:sessionId,testId,studentRegNumber:regNumber,studentName,startTime:Date.now(),endTimestamp:endTime,questionsOrder:shuffledIds,currentIndex:0,answers:{}};
+        sessions.push(session);
+        await fetchJson('/api/sessions',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(sessions)});
+        return {sessionId,endTimestamp:endTime,questionsOrder:shuffledIds};
     }
     async function loadSession(){
         const sid=localStorage.getItem('quiz_session_id');
         if(!sid) return null;
-        const r=await fetch(`/api/session/${sid}`);
-        if(r.status===404){localStorage.removeItem('quiz_session_id');return null;}
-        return r.json();
+        const sessions=await fetchJson('/api/sessions',{method:'GET'});
+        const session=sessions.find(s=>s.id===sid);
+        if(!session){localStorage.removeItem('quiz_session_id');return null;}
+        return session;
     }
     async function updateSession(answers, idx){
         if(!currentSessionId) return;
-        await fetch(`/api/session/${currentSessionId}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({answers,currentIndex:idx})});
+        let sessions=await fetchJson('/api/sessions',{method:'GET'});
+        const sIdx=sessions.findIndex(s=>s.id===currentSessionId);
+        if(sIdx!==-1){
+            if(answers) sessions[sIdx].answers={...sessions[sIdx].answers,...answers};
+            if(idx!==undefined) sessions[sIdx].currentIndex=idx;
+            await fetchJson('/api/sessions',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(sessions)});
+        }
     }
     async function finishSession(){
         if(!currentSessionId) return;
-        await fetch(`/api/finish-session/${currentSessionId}`,{method:'POST'});
+        let sessions=await fetchJson('/api/sessions',{method:'GET'});
+        sessions=sessions.filter(s=>s.id!==currentSessionId);
+        await fetchJson('/api/sessions',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(sessions)});
         localStorage.removeItem('quiz_session_id');
     }
     async function init(){
         const session=await loadSession();
         if(session){
-            const tests=await fetchTests();
+            const tests=await fetchJson('/api/tests',{method:'GET'});
             currentTest=tests.find(t=>t.id===session.testId);
             if(!currentTest){localStorage.removeItem('quiz_session_id');showLogin();return;}
             questionsOrder=session.questionsOrder;
@@ -87,13 +102,12 @@
             updateCounter();
         }else showLogin();
     }
-    let sessionAnswers={};
     function showLogin(){
         document.getElementById('appWindow').innerHTML=`<div class="login-overlay"><div class="login-card"><h2>Вход в тестирование</h2><p>Введите код участника</p><input type="text" id="regCode" placeholder="Код участника"><button id="loginBtn" style="background:#1E325A;color:white;padding:0.6rem 2rem;border:none;border-radius:40px;">Войти</button><div id="loginError" class="error-msg"></div></div></div>`;
-        document.getElementById('loginBtn').addEventListener('click',async()=>{
+        document.getElementById('loginBtn').onclick=async()=>{
             const code=document.getElementById('regCode').value.trim();
             if(!code){document.getElementById('loginError').innerText='Введите код';return;}
-            const tests=await fetchTests();
+            const tests=await fetchJson('/api/tests',{method:'GET'});
             let foundTest=null, foundStudent=null;
             for(let t of tests){const s=(t.students||[]).find(st=>st.registrationNumber===code);if(s){foundTest=t;foundStudent=s;break;}}
             if(!foundTest){document.getElementById('loginError').innerText='Код не найден';return;}
@@ -104,13 +118,16 @@
                 currentIndex=0;
                 currentSessionId=data.sessionId;
                 sessionAnswers={};
+                localStorage.setItem('quiz_session_id',currentSessionId);
+                localStorage.setItem('quiz_session_student_reg',code);
+                localStorage.setItem('quiz_session_student_name',foundStudent.fullName);
                 buildUI();
                 startTimer(data.endTimestamp);
                 await renderCurrentQuestion();
                 renderNav();
                 updateCounter();
             }catch(e){document.getElementById('loginError').innerText=e.message;}
-        });
+        };
     }
     function buildUI(){
         const app=document.getElementById('appWindow');
@@ -140,7 +157,6 @@
     }
     async function renderCurrentQuestion(){
         const qid=questionsOrder[currentIndex];
-        // всегда получаем актуальную версию вопроса из currentTest (которая обновляется при изменениях учителя)
         const q=currentTest.questions.find(qq=>qq.id===qid);
         if(!q) return;
         let html='';
@@ -236,6 +252,19 @@
         if(finished) return;
         if(timerInterval) clearInterval(timerInterval);
         await saveCurrentAnswer();
+        let tests=await fetchJson('/api/tests',{method:'GET'});
+        const testIdx=tests.findIndex(t=>t.id===currentTest.id);
+        if(testIdx!==-1){
+            const answersArray=[];
+            for(let qid of questionsOrder){
+                const ans=sessionAnswers[qid]||{text:'',files:[]};
+                answersArray.push({questionId:qid,answerText:ans.text,files:ans.files});
+            }
+            const result={studentRegNumber:localStorage.getItem('quiz_session_student_reg')||'',studentName:localStorage.getItem('quiz_session_student_name')||'',finishedAt:Date.now(),answers:answersArray};
+            if(!tests[testIdx].results) tests[testIdx].results=[];
+            tests[testIdx].results.push(result);
+            await fetchJson('/api/tests',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(tests)});
+        }
         await finishSession();
         finished=true;
         const resultsPage=await buildResultsPage();
@@ -264,7 +293,7 @@
             details.push({title:q.titleQuestion,userAnswer:userText,correctAnswer:correctOpts,isCorrect});
         }
         const total=questions.length, percent=Math.round((correctCount/total)*100);
-        let html=`<div class="results-container"><h1>Результаты тестирования</h1><p><strong>Ученик:</strong> ${escapeHtml(currentTest.students?.find(s=>s.registrationNumber===currentSessionId?.studentRegNumber)?.fullName||'')}</p><p><strong>Ваш результат:</strong> ${correctCount} из ${total} (${percent}%)</p><hr>`;
+        let html=`<div class="results-container"><h1>Результаты тестирования</h1><p><strong>Ученик:</strong> ${escapeHtml(currentTest.students?.find(s=>s.registrationNumber===localStorage.getItem('quiz_session_student_reg'))?.fullName||'')}</p><p><strong>Ваш результат:</strong> ${correctCount} из ${total} (${percent}%)</p><hr>`;
         if(showDetails){
             html+=`<h2>Разбор вопросов</h2>`;
             for(let i=0;i<details.length;i++){
