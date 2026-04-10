@@ -1,86 +1,47 @@
 <!DOCTYPE html>
 <html lang="ru">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Управление админами</title>
+    <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Управление администраторами</title>
     <style>
-        *{margin:0;padding:0;box-sizing:border-box;font-family:system-ui,sans-serif;}
+        *{margin:0;padding:0;box-sizing:border-box;font-family:system-ui,'Segoe UI','Inter',sans-serif;}
         body{background:#f1f5f9;padding:2rem;}
         .container{max-width:1000px;margin:0 auto;}
-        .back-link{display:inline-block;margin-bottom:1.5rem;color:#3b82f6;text-decoration:none;}
-        .card{background:white;border-radius:32px;padding:1.5rem;margin-bottom:2rem;}
+        .back-link{display:inline-block;margin-bottom:1rem;}
+        .card{background:white;border-radius:32px;padding:1.5rem;margin-bottom:1rem;}
         table{width:100%;border-collapse:collapse;}
-        th,td{border:1px solid #e2e8f0;padding:0.75rem;text-align:left;}
-        th{background:#f8fafc;}
-        .btn{padding:0.5rem 1rem;border-radius:40px;border:none;cursor:pointer;}
+        th,td{border:1px solid #e2e8f0;padding:0.5rem;text-align:left;}
+        .btn{background:#e2e8f0;border:none;padding:0.3rem 0.8rem;border-radius:20px;cursor:pointer;}
         .btn-primary{background:#3b82f6;color:white;}
-        .btn-danger{background:#fee2e2;color:#b91c1c;}
-        .modal{display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);justify-content:center;align-items:center;z-index:1000;}
+        .modal{display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);justify-content:center;align-items:center;}
         .modal-content{background:white;border-radius:32px;padding:2rem;width:400px;}
-        input{width:100%;padding:0.5rem;margin:0.5rem 0;border:1px solid #ccc;border-radius:20px;}
     </style>
 </head>
 <body>
 <div class="container">
-    <a href="dashboard.html" class="back-link">← На главную</a>
-    <div class="card">
-        <h2>Управление администраторами</h2>
-        <button id="addAdminBtn" class="btn btn-primary">+ Добавить администратора</button>
-        <table style="margin-top:1rem;">
-            <thead><tr><th>Логин</th><th>Роль</th><th>Действия</th></tr></thead>
-            <tbody id="adminsTable"></tbody>
-        </table>
-    </div>
+    <a href="index.html" class="back-link">← На главную</a>
+    <div class="card"><h2>Администраторы</h2><button id="addAdminBtn" class="btn btn-primary">+ Добавить администратора</button><table id="adminsTable"><thead><tr><th>Логин</th><th>Роль</th><th>Дата создания</th><th>Действия</th></tr></thead><tbody id="adminsTbody"></tbody></table></div>
 </div>
-<div id="addModal" class="modal">
-    <div class="modal-content">
-        <h3>Добавить администратора</h3>
-        <input type="text" id="newLogin" placeholder="Логин">
-        <input type="password" id="newPassword" placeholder="Пароль">
-        <select id="newRole"><option value="admin">Обычный админ</option><option value="superadmin">Супер-админ</option></select>
-        <div style="margin-top:1rem; display:flex; gap:1rem; justify-content:flex-end;">
-            <button id="cancelModal" class="btn">Отмена</button>
-            <button id="confirmAdd" class="btn btn-primary">Добавить</button>
-        </div>
-    </div>
-</div>
+<div id="addModal" class="modal"><div class="modal-content"><h3>Новый администратор</h3><input type="text" id="newUsername" placeholder="Логин"><input type="password" id="newPassword" placeholder="Пароль"><select id="newRole"><option value="admin">Обычный администратор</option><option value="super_admin">Главный администратор</option></select><div style="margin-top:1rem;"><button id="cancelAddBtn">Отмена</button><button id="confirmAddBtn">Создать</button></div></div></div>
 <script>
+    async function fetchJson(url, options) { const res = await fetch(url, options); if (!res.ok) throw new Error(await res.text()); return res.json(); }
     async function loadAdmins() {
-        const res = await fetch('/api/admins');
-        if (!res.ok) { alert('Доступ запрещён'); window.location.href = 'dashboard.html'; return; }
-        const admins = await res.json();
-        const tbody = document.getElementById('adminsTable');
-        tbody.innerHTML = admins.map(a => `
-            <tr>
-                <td>${escapeHtml(a.login)}</td>
-                <td>${a.role === 'superadmin' ? 'Супер-админ' : 'Админ'}</td>
-                <td><button class="btn btn-danger delete-admin" data-id="${a.id}">Удалить</button></td>
-            </tr>
-        `).join('');
-        document.querySelectorAll('.delete-admin').forEach(btn => btn.addEventListener('click', async () => {
-            if (confirm('Удалить администратора?')) {
-                await fetch(`/api/admins/${btn.dataset.id}`, { method: 'DELETE' });
-                loadAdmins();
-            }
-        }));
+        const admins = await fetchJson('/api/users-list', { method: 'GET' });
+        const tbody = document.getElementById('adminsTbody');
+        tbody.innerHTML = admins.map(a => `<tr><td>${escapeHtml(a.username)}</td><td>${escapeHtml(a.role)}</td><td>${new Date(a.created_at).toLocaleString()}</td><td>${a.username !== 'admin' ? `<button class="btn delete-admin" data-id="${a.id}">Удалить</button>` : ''}</td></tr>`).join('');
+        document.querySelectorAll('.delete-admin').forEach(btn => btn.onclick = async () => { if(confirm('Удалить администратора?')) { await fetchJson('/api/delete-admin', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: parseInt(btn.dataset.id) }) }); loadAdmins(); } });
     }
-    function escapeHtml(s) { return s.replace(/[&<>]/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[m])); }
-    const modal = document.getElementById('addModal');
-    document.getElementById('addAdminBtn').onclick = () => modal.style.display = 'flex';
-    document.getElementById('cancelModal').onclick = () => modal.style.display = 'none';
-    document.getElementById('confirmAdd').onclick = async () => {
-        const login = document.getElementById('newLogin').value.trim();
+    function escapeHtml(s) { if(!s) return ''; return s.replace(/[&<>]/g, m => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;' }[m])); }
+    document.getElementById('addAdminBtn').onclick = () => document.getElementById('addModal').style.display = 'flex';
+    document.getElementById('cancelAddBtn').onclick = () => document.getElementById('addModal').style.display = 'none';
+    document.getElementById('confirmAddBtn').onclick = async () => {
+        const username = document.getElementById('newUsername').value;
         const password = document.getElementById('newPassword').value;
         const role = document.getElementById('newRole').value;
-        if (!login || !password) { alert('Заполните логин и пароль'); return; }
-        const res = await fetch('/api/admins', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ login, password, role })
-        });
-        if (res.ok) { modal.style.display = 'none'; loadAdmins(); }
-        else alert('Ошибка: логин уже существует');
+        if (!username || !password) { alert('Заполните поля'); return; }
+        await fetchJson('/api/create-admin', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username, password, role }) });
+        alert('Администратор создан');
+        document.getElementById('addModal').style.display = 'none';
+        loadAdmins();
     };
     loadAdmins();
 </script>
