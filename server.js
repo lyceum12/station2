@@ -1,4 +1,5 @@
 const express = require('express');
+const cors = require('cors');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
@@ -8,6 +9,7 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 // Middleware
+app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 app.use(express.static('public'));
 
@@ -17,79 +19,159 @@ const uploadsDir = path.join(__dirname, 'uploads');
 if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir);
 if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir);
 
-// Файлы данных
-const testsFile = path.join(dataDir, 'tests.json');
-const usersFile = path.join(dataDir, 'users.json');
-const tasksFile = path.join(dataDir, 'tasks_base.json');
-const sessionsFile = path.join(dataDir, 'sessions.json');
-
-// Инициализация файлов
-function initFile(file, defaultData) {
-    if (!fs.existsSync(file)) {
-        fs.writeFileSync(file, JSON.stringify(defaultData, null, 2));
-    }
-}
-initFile(testsFile, []);
-initFile(usersFile, { groups: [], users: [] });
-initFile(tasksFile, []);
-initFile(sessionsFile, []);
-
-// Вспомогательные функции
+// Вспомогательные функции для работы с JSON-файлами
 function readJSON(file) {
-    const data = fs.readFileSync(file, 'utf8');
+    const filePath = path.join(dataDir, file);
+    if (!fs.existsSync(filePath)) return [];
+    const data = fs.readFileSync(filePath, 'utf8');
     return JSON.parse(data);
 }
+
 function writeJSON(file, data) {
-    fs.writeFileSync(file, JSON.stringify(data, null, 2));
+    const filePath = path.join(dataDir, file);
+    fs.writeFileSync(filePath, JSON.stringify(data, null, 2));
 }
 
-// ========== API ==========
+// ==================== API ====================
 
-// Тесты
+// Получить все тесты
 app.get('/api/tests', (req, res) => {
-    const tests = readJSON(testsFile);
+    const tests = readJSON('tests.json');
     res.json(tests);
 });
+
+// Сохранить все тесты
 app.post('/api/tests', (req, res) => {
     const tests = req.body;
-    writeJSON(testsFile, tests);
+    writeJSON('tests.json', tests);
     res.json({ success: true });
 });
 
-// Пользователи (ученики и группы)
-app.get('/api/users-data', (req, res) => {
-    const data = readJSON(usersFile);
-    res.json(data);
+// Получить пользователей (ученики + группы)
+app.get('/api/users', (req, res) => {
+    const users = readJSON('users.json');
+    res.json(users);
 });
-app.post('/api/users-data', (req, res) => {
-    const data = req.body;
-    writeJSON(usersFile, data);
+
+// Сохранить пользователей
+app.post('/api/users', (req, res) => {
+    const users = req.body;
+    writeJSON('users.json', users);
     res.json({ success: true });
 });
 
-// База заданий
+// Получить базу заданий
 app.get('/api/tasks-base', (req, res) => {
-    const tasks = readJSON(tasksFile);
+    const tasks = readJSON('tasks_base.json');
     res.json(tasks);
 });
+
+// Сохранить базу заданий
 app.post('/api/tasks-base', (req, res) => {
     const tasks = req.body;
-    writeJSON(tasksFile, tasks);
+    writeJSON('tasks_base.json', tasks);
     res.json({ success: true });
 });
 
-// Сессии учеников
+// ========== Сессии учеников ==========
+// Получить все сессии
 app.get('/api/sessions', (req, res) => {
-    const sessions = readJSON(sessionsFile);
+    const sessions = readJSON('sessions.json');
     res.json(sessions);
 });
+
+// Сохранить сессии
 app.post('/api/sessions', (req, res) => {
     const sessions = req.body;
-    writeJSON(sessionsFile, sessions);
+    writeJSON('sessions.json', sessions);
     res.json({ success: true });
 });
 
-// Загрузка файлов
+// Начать новую сессию
+app.post('/api/start-session', (req, res) => {
+    const { testId, studentRegNumber, studentName } = req.body;
+    const tests = readJSON('tests.json');
+    const test = tests.find(t => t.id === testId);
+    if (!test) return res.status(404).json({ error: 'Тест не найден' });
+
+    const student = (test.students || []).find(s => s.registrationNumber === studentRegNumber);
+    if (!student) return res.status(403).json({ error: 'Код участника не найден' });
+
+    const questions = test.questions || [];
+    const shuffledIds = [...questions].sort(() => Math.random() - 0.5).map(q => q.id);
+    const endTime = Date.now() + (test.timeLimitMinutes || 60) * 60 * 1000;
+    const sessionId = uuidv4();
+
+    const session = {
+        id: sessionId,
+        testId,
+        studentRegNumber,
+        studentName: student.fullName,
+        startTime: Date.now(),
+        endTimestamp: endTime,
+        questionsOrder: shuffledIds,
+        currentIndex: 0,
+        answers: {}
+    };
+
+    const sessions = readJSON('sessions.json');
+    sessions.push(session);
+    writeJSON('sessions.json', sessions);
+
+    res.json({ sessionId, endTimestamp: endTime, questionsOrder: shuffledIds });
+});
+
+// Получить сессию по ID
+app.get('/api/session/:sessionId', (req, res) => {
+    const sessions = readJSON('sessions.json');
+    const session = sessions.find(s => s.id === req.params.sessionId);
+    if (!session) return res.status(404).json({ error: 'Сессия не найдена' });
+    res.json(session);
+});
+
+// Обновить сессию (ответы, текущий вопрос)
+app.post('/api/session/:sessionId', (req, res) => {
+    const { answers, currentIndex } = req.body;
+    const sessions = readJSON('sessions.json');
+    const index = sessions.findIndex(s => s.id === req.params.sessionId);
+    if (index === -1) return res.status(404).json({ error: 'Сессия не найдена' });
+
+    if (answers) sessions[index].answers = { ...sessions[index].answers, ...answers };
+    if (currentIndex !== undefined) sessions[index].currentIndex = currentIndex;
+    writeJSON('sessions.json', sessions);
+    res.json({ success: true });
+});
+
+// Завершить сессию и сохранить результат в тест
+app.post('/api/finish-session/:sessionId', (req, res) => {
+    const sessions = readJSON('sessions.json');
+    const index = sessions.findIndex(s => s.id === req.params.sessionId);
+    if (index === -1) return res.status(404).json({ error: 'Сессия не найдена' });
+
+    const session = sessions[index];
+    const tests = readJSON('tests.json');
+    const testIndex = tests.findIndex(t => t.id === session.testId);
+    if (testIndex !== -1) {
+        if (!tests[testIndex].results) tests[testIndex].results = [];
+        tests[testIndex].results.push({
+            studentRegNumber: session.studentRegNumber,
+            studentName: session.studentName,
+            finishedAt: Date.now(),
+            answers: Object.entries(session.answers).map(([qid, ans]) => ({
+                questionId: qid,
+                answerText: ans.text,
+                files: ans.files || []
+            }))
+        });
+        writeJSON('tests.json', tests);
+    }
+
+    sessions.splice(index, 1);
+    writeJSON('sessions.json', sessions);
+    res.json({ success: true });
+});
+
+// ========== Загрузка файлов ==========
 const storage = multer.diskStorage({
     destination: (req, file, cb) => cb(null, uploadsDir),
     filename: (req, file, cb) => {
@@ -98,36 +180,23 @@ const storage = multer.diskStorage({
     }
 });
 const upload = multer({ storage });
+
 app.post('/api/upload-file', upload.single('file'), (req, res) => {
     if (!req.file) return res.status(400).json({ error: 'Файл не загружен' });
     res.json({ fileName: req.file.filename, originalName: req.file.originalname });
 });
+
 app.get('/api/uploads/:filename', (req, res) => {
     const filePath = path.join(uploadsDir, req.params.filename);
-    if (fs.existsSync(filePath)) res.sendFile(filePath);
-    else res.status(404).json({ error: 'Файл не найден' });
+    if (fs.existsSync(filePath)) {
+        res.sendFile(filePath);
+    } else {
+        res.status(404).json({ error: 'Файл не найден' });
+    }
 });
 
-// Экспорт/импорт всех данных (для переноса)
-app.get('/api/export-all', (req, res) => {
-    const data = {
-        tests: readJSON(testsFile),
-        users: readJSON(usersFile),
-        tasks: readJSON(tasksFile),
-        sessions: readJSON(sessionsFile)
-    };
-    res.json(data);
-});
-app.post('/api/import-all', (req, res) => {
-    const { tests, users, tasks, sessions } = req.body;
-    if (tests) writeJSON(testsFile, tests);
-    if (users) writeJSON(usersFile, users);
-    if (tasks) writeJSON(tasksFile, tasks);
-    if (sessions) writeJSON(sessionsFile, sessions);
-    res.json({ success: true });
-});
-
-// Старт сервера
+// Запуск сервера
 app.listen(PORT, '0.0.0.0', () => {
     console.log(`Сервер запущен на http://localhost:${PORT}`);
+    console.log(`Для доступа с других устройств используйте IP-адрес этого компьютера`);
 });
