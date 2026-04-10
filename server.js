@@ -10,28 +10,28 @@ const { v4: uuidv4 } = require('uuid');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Настройка CORS для работы с credentials
+// Middleware
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ extended: true }));
+app.use(express.static('public'));
+app.use(session({
+    secret: 'test_constructor_secret_key_2025',
+    resave: false,
+    saveUninitialized: false,
+    cookie: { secure: false, httpOnly: true, maxAge: 1000 * 60 * 60 * 24 } // 24 часа
+}));
+
+// CORS для работы с credentials
 app.use((req, res, next) => {
     res.header('Access-Control-Allow-Origin', req.headers.origin);
     res.header('Access-Control-Allow-Credentials', 'true');
     res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-    res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept');
+    res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
     if (req.method === 'OPTIONS') {
         return res.sendStatus(200);
     }
     next();
 });
-
-app.use(express.json({ limit: '50mb' }));
-app.use(express.urlencoded({ extended: true }));
-app.use(express.static('public'));
-
-app.use(session({
-    secret: 'test_constructor_secret_key_2025',
-    resave: false,
-    saveUninitialized: false,
-    cookie: { secure: false, httpOnly: true, maxAge: 1000 * 60 * 60 * 24 }
-}));
 
 // Папки
 const dataDir = path.join(__dirname, 'data');
@@ -44,6 +44,7 @@ if (!fs.existsSync(logsDir)) fs.mkdirSync(logsDir);
 // SQLite база данных
 const db = new sqlite3.Database(path.join(dataDir, 'test_constructor.db'));
 
+// Инициализация таблиц
 db.serialize(() => {
     db.run(`CREATE TABLE IF NOT EXISTS users (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -52,10 +53,22 @@ db.serialize(() => {
         role TEXT DEFAULT 'admin',
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )`);
-    db.run(`CREATE TABLE IF NOT EXISTS tests (id TEXT PRIMARY KEY, data TEXT)`);
-    db.run(`CREATE TABLE IF NOT EXISTS users_data (id TEXT PRIMARY KEY, data TEXT)`);
-    db.run(`CREATE TABLE IF NOT EXISTS tasks_base (id TEXT PRIMARY KEY, data TEXT)`);
-    db.run(`CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY, data TEXT)`);
+    db.run(`CREATE TABLE IF NOT EXISTS tests (
+        id TEXT PRIMARY KEY,
+        data TEXT
+    )`);
+    db.run(`CREATE TABLE IF NOT EXISTS users_data (
+        id TEXT PRIMARY KEY,
+        data TEXT
+    )`);
+    db.run(`CREATE TABLE IF NOT EXISTS tasks_base (
+        id TEXT PRIMARY KEY,
+        data TEXT
+    )`);
+    db.run(`CREATE TABLE IF NOT EXISTS sessions (
+        id TEXT PRIMARY KEY,
+        data TEXT
+    )`);
     db.run(`CREATE TABLE IF NOT EXISTS logs (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         username TEXT,
@@ -64,6 +77,7 @@ db.serialize(() => {
         timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
     )`);
     
+    // Создание главного админа, если нет
     db.get("SELECT * FROM users WHERE username = 'admin'", async (err, row) => {
         if (!row) {
             const hash = await bcrypt.hash('admin', 10);
@@ -73,11 +87,13 @@ db.serialize(() => {
     });
 });
 
+// Вспомогательные функции для логов
 function logAction(username, action, req) {
     const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'unknown';
     db.run("INSERT INTO logs (username, action, ip) VALUES (?, ?, ?)", [username, action, ip]);
 }
 
+// Middleware проверки авторизации
 function isAuthenticated(req, res, next) {
     if (req.session.user) return next();
     res.status(401).json({ error: 'Не авторизован' });
@@ -88,8 +104,9 @@ function isSuperAdmin(req, res, next) {
     res.status(403).json({ error: 'Доступ запрещён' });
 }
 
-// API
+// ========== API ==========
 
+// Авторизация
 app.post('/api/login', async (req, res) => {
     const { username, password } = req.body;
     db.get("SELECT * FROM users WHERE username = ?", [username], async (err, user) => {
@@ -102,12 +119,14 @@ app.post('/api/login', async (req, res) => {
     });
 });
 
+// Выход
 app.post('/api/logout', (req, res) => {
     if (req.session.user) logAction(req.session.user.username, 'Выход из системы', req);
     req.session.destroy();
     res.json({ success: true });
 });
 
+// Смена пароля
 app.post('/api/change-password', isAuthenticated, async (req, res) => {
     const { oldPassword, newPassword } = req.body;
     db.get("SELECT * FROM users WHERE id = ?", [req.session.user.id], async (err, user) => {
@@ -121,6 +140,7 @@ app.post('/api/change-password', isAuthenticated, async (req, res) => {
     });
 });
 
+// Получение списка всех пользователей (только super_admin)
 app.get('/api/users-list', isAuthenticated, isSuperAdmin, (req, res) => {
     db.all("SELECT id, username, role, created_at FROM users", (err, rows) => {
         if (err) return res.status(500).json({ error: err.message });
@@ -128,6 +148,7 @@ app.get('/api/users-list', isAuthenticated, isSuperAdmin, (req, res) => {
     });
 });
 
+// Создание нового администратора
 app.post('/api/create-admin', isAuthenticated, isSuperAdmin, async (req, res) => {
     const { username, password, role } = req.body;
     if (!username || !password) return res.status(400).json({ error: 'Заполните все поля' });
@@ -139,6 +160,7 @@ app.post('/api/create-admin', isAuthenticated, isSuperAdmin, async (req, res) =>
     });
 });
 
+// Удаление администратора
 app.post('/api/delete-admin', isAuthenticated, isSuperAdmin, (req, res) => {
     const { id } = req.body;
     if (id == req.session.user.id) return res.status(400).json({ error: 'Нельзя удалить самого себя' });
@@ -149,6 +171,7 @@ app.post('/api/delete-admin', isAuthenticated, isSuperAdmin, (req, res) => {
     });
 });
 
+// Получение логов
 app.get('/api/logs', isAuthenticated, isSuperAdmin, (req, res) => {
     db.all("SELECT * FROM logs ORDER BY timestamp DESC LIMIT 1000", (err, rows) => {
         if (err) return res.status(500).json({ error: err.message });
@@ -156,6 +179,7 @@ app.get('/api/logs', isAuthenticated, isSuperAdmin, (req, res) => {
     });
 });
 
+// CRUD для тестов
 app.get('/api/tests', isAuthenticated, (req, res) => {
     db.get("SELECT data FROM tests WHERE id = 'all_tests'", (err, row) => {
         if (err) return res.status(500).json({ error: err.message });
@@ -172,6 +196,7 @@ app.post('/api/tests', isAuthenticated, (req, res) => {
     });
 });
 
+// CRUD для пользователей (ученики)
 app.get('/api/users-data', isAuthenticated, (req, res) => {
     db.get("SELECT data FROM users_data WHERE id = 'all_users'", (err, row) => {
         if (err) return res.status(500).json({ error: err.message });
@@ -188,6 +213,7 @@ app.post('/api/users-data', isAuthenticated, (req, res) => {
     });
 });
 
+// CRUD для базы заданий
 app.get('/api/tasks-base', isAuthenticated, (req, res) => {
     db.get("SELECT data FROM tasks_base WHERE id = 'all_tasks'", (err, row) => {
         if (err) return res.status(500).json({ error: err.message });
@@ -204,6 +230,7 @@ app.post('/api/tasks-base', isAuthenticated, (req, res) => {
     });
 });
 
+// Сессии учеников
 app.get('/api/sessions', isAuthenticated, (req, res) => {
     db.get("SELECT data FROM sessions WHERE id = 'all_sessions'", (err, row) => {
         if (err) return res.status(500).json({ error: err.message });
@@ -219,6 +246,7 @@ app.post('/api/sessions', isAuthenticated, (req, res) => {
     });
 });
 
+// Загрузка файлов
 const storage = multer.diskStorage({
     destination: (req, file, cb) => cb(null, uploadsDir),
     filename: (req, file, cb) => {
@@ -237,6 +265,7 @@ app.get('/api/uploads/:filename', (req, res) => {
     else res.status(404).json({ error: 'Файл не найден' });
 });
 
+// Экспорт/импорт всей БД (для администраторов)
 app.get('/api/export-db', isAuthenticated, (req, res) => {
     const filePath = path.join(dataDir, 'test_constructor.db');
     res.download(filePath, 'test_constructor.db');
@@ -250,11 +279,13 @@ app.post('/api/import-db', isAuthenticated, multerDb.single('db'), async (req, r
     res.json({ success: true });
 });
 
+// Проверка сессии (для клиента)
 app.get('/api/check-session', (req, res) => {
     if (req.session.user) res.json({ authenticated: true, role: req.session.user.role });
     else res.json({ authenticated: false });
 });
 
+// Старт сервера
 app.listen(PORT, '0.0.0.0', () => {
     console.log(`Сервер запущен на http://localhost:${PORT}`);
     console.log(`Главный админ: admin / admin`);
