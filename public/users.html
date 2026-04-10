@@ -19,6 +19,9 @@
         .modal-content{background:white;border-radius:32px;padding:2rem;max-width:500px;width:90%;}
         .modal-content textarea{width:100%;height:150px;margin:1rem 0;padding:0.5rem;border:1px solid #cbd5e1;border-radius:16px;}
         .modal-buttons{display:flex;justify-content:flex-end;gap:12px;}
+        .toast{position:fixed;bottom:20px;right:20px;background:#10b981;color:white;padding:12px 20px;border-radius:40px;z-index:1000;animation:fadein 0.3s;}
+        .toast.error{background:#ef4444;}
+        @keyframes fadein{from{opacity:0;transform:translateX(100%);}to{opacity:1;transform:translateX(0);}}
     </style>
 </head>
 <body>
@@ -31,17 +34,7 @@
 <div id="groupModal" class="modal"><div class="modal-content"><h3>Создание группы</h3><input type="text" id="groupNameInput" placeholder="Название группы"><div class="modal-buttons" style="margin-top:1rem;"><button id="cancelGroupBtn" class="btn">Отмена</button><button id="confirmGroupBtn" class="btn btn-primary">Создать</button></div></div></div>
 <script>
     let groups=[], users=[], selectedFilterGroup="";
-    
-    async function checkAuth() {
-        const res = await fetch('/api/check-session');
-        const data = await res.json();
-        if (!data.authenticated) {
-            window.location.href = 'index.html';
-            return false;
-        }
-        return true;
-    }
-
+    function showToast(msg, isError=false){const t=document.createElement('div');t.className='toast'+(isError?' error':'');t.textContent=msg;document.body.appendChild(t);setTimeout(()=>t.remove(),3000);}
     async function fetchUsersData(){const r=await fetch('/api/users');return r.json();}
     async function saveUsersData(data){await fetch('/api/users',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});}
     async function loadData(){const data=await fetchUsersData();groups=data.groups||[];users=data.users||[];renderGroups();renderGroupSelect();renderUsers();}
@@ -51,8 +44,8 @@
         const tbody=document.getElementById('groupsTbody');
         if(!groups.length)tbody.innerHTML='<tr><td colspan="2">Нет групп</td></tr>';
         else tbody.innerHTML=groups.map((g,idx)=>`<tr><td><input type="text" class="group-name" value="${escapeHtml(g.name)}" data-idx="${idx}"></td><td><button class="btn save-group" data-idx="${idx}">Сохранить</button> <button class="btn delete-group" data-idx="${idx}" style="color:red;">Удалить</button></td></tr>`).join('');
-        document.querySelectorAll('.save-group').forEach(btn=>btn.addEventListener('click',()=>{const idx=parseInt(btn.dataset.idx);const newName=document.querySelector(`.group-name[data-idx="${idx}"]`).value.trim();if(newName){groups[idx].name=newName;saveAndSync();renderGroups();renderGroupSelect();renderUsers();}}));
-        document.querySelectorAll('.delete-group').forEach(btn=>btn.addEventListener('click',()=>{if(confirm('Удалить группу?')){groups.splice(parseInt(btn.dataset.idx),1);saveAndSync();renderGroups();renderGroupSelect();renderUsers();}}));
+        document.querySelectorAll('.save-group').forEach(btn=>btn.addEventListener('click',()=>{const idx=parseInt(btn.dataset.idx);const newName=document.querySelector(`.group-name[data-idx="${idx}"]`).value.trim();if(newName){groups[idx].name=newName;saveAndSync();renderGroups();renderGroupSelect();renderUsers();showToast('Группа сохранена');}}));
+        document.querySelectorAll('.delete-group').forEach(btn=>btn.addEventListener('click',()=>{if(confirm('Удалить группу?')){groups.splice(parseInt(btn.dataset.idx),1);saveAndSync();renderGroups();renderGroupSelect();renderUsers();showToast('Группа удалена');}}));
     }
     function renderGroupSelect(){
         const select=document.getElementById('groupSelect');
@@ -70,12 +63,12 @@
             const origIdx=users.findIndex(us=>us.id===u.id);
             return `<tr><td><input type="text" class="user-name" value="${escapeHtml(u.fullName)}" data-idx="${origIdx}"></td><td><input type="text" class="user-code" value="${escapeHtml(u.registrationNumber)}" data-idx="${origIdx}"></td><td><select class="user-group" data-idx="${origIdx}"><option value="">Без группы</option>${groups.map(g=>`<option value="${escapeHtml(g.name)}" ${u.group===g.name?'selected':''}>${escapeHtml(g.name)}</option>`).join('')}</select></td><td><button class="btn save-user" data-idx="${origIdx}">Сохранить</button> <button class="btn delete-user" data-idx="${origIdx}" style="color:red;">Удалить</button></td></tr>`;
         }).join('');
-        document.querySelectorAll('.save-user').forEach(btn=>btn.addEventListener('click',()=>{const idx=parseInt(btn.dataset.idx);const row=btn.closest('tr');const name=row.querySelector('.user-name').value.trim();const code=row.querySelector('.user-code').value.trim();const group=row.querySelector('.user-group').value;if(name&&code){users[idx].fullName=name;users[idx].registrationNumber=code;users[idx].group=group||null;saveAndSync();renderUsers();}else alert('Заполните ФИО и код');}));
-        document.querySelectorAll('.delete-user').forEach(btn=>btn.addEventListener('click',()=>{if(confirm('Удалить пользователя?')){users.splice(parseInt(btn.dataset.idx),1);saveAndSync();renderUsers();}}));
+        document.querySelectorAll('.save-user').forEach(btn=>btn.addEventListener('click',()=>{const idx=parseInt(btn.dataset.idx);const row=btn.closest('tr');const name=row.querySelector('.user-name').value.trim();const code=row.querySelector('.user-code').value.trim();const group=row.querySelector('.user-group').value;if(name&&code){users[idx].fullName=name;users[idx].registrationNumber=code;users[idx].group=group||null;saveAndSync();renderUsers();showToast('Пользователь сохранён');}else showToast('Заполните ФИО и код',true);}));
+        document.querySelectorAll('.delete-user').forEach(btn=>btn.addEventListener('click',()=>{if(confirm('Удалить пользователя?')){users.splice(parseInt(btn.dataset.idx),1);saveAndSync();renderUsers();showToast('Пользователь удалён');}}));
     }
     const groupModal=document.getElementById('groupModal');
     document.getElementById('addGroupBtn').addEventListener('click',()=>{groupModal.style.display='flex';});
-    document.getElementById('confirmGroupBtn').addEventListener('click',()=>{const name=document.getElementById('groupNameInput').value.trim();if(name){groups.push({name:name});saveAndSync();renderGroups();renderGroupSelect();renderUsers();}groupModal.style.display='none';document.getElementById('groupNameInput').value='';});
+    document.getElementById('confirmGroupBtn').addEventListener('click',()=>{const name=document.getElementById('groupNameInput').value.trim();if(name){groups.push({name:name});saveAndSync();renderGroups();renderGroupSelect();renderUsers();showToast('Группа создана');groupModal.style.display='none';document.getElementById('groupNameInput').value='';}else showToast('Введите название',true);});
     document.getElementById('cancelGroupBtn').addEventListener('click',()=>{groupModal.style.display='none';document.getElementById('groupNameInput').value='';});
     const userModal=document.getElementById('userModal');
     document.getElementById('addUserBtn').addEventListener('click',()=>{renderGroupSelect();userModal.style.display='flex';});
@@ -85,14 +78,13 @@
         let names=raw.split(/\r?\n/);
         let finalNames=[];
         for(let line of names){if(line.includes(',')) finalNames.push(...line.split(',').map(s=>s.trim()));else if(line.trim()) finalNames.push(line.trim());}
-        if(!finalNames.length){alert('Введите хотя бы одно ФИО');return;}
+        if(!finalNames.length){showToast('Введите хотя бы одно ФИО',true);return;}
         const selectedGroup=document.getElementById('userGroupSelect').value||null;
         for(let name of finalNames){const code=generateCode();users.push({id:Date.now()+'_'+Math.random(),fullName:name,registrationNumber:code,group:selectedGroup});}
-        saveAndSync();renderUsers();userModal.style.display='none';document.getElementById('namesInput').value='';alert(`Добавлено ${finalNames.length} пользователей`);
+        saveAndSync();renderUsers();userModal.style.display='none';document.getElementById('namesInput').value='';showToast(`Добавлено ${finalNames.length} пользователей`);
     });
     function escapeHtml(s){if(!s)return '';return s.replace(/[&<>]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[m]));}
-    
-    checkAuth().then(ok => { if(ok) loadData(); });
+    loadData();
 </script>
 </body>
 </html>
