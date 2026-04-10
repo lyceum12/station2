@@ -31,6 +31,17 @@
 <div id="groupModal" class="modal"><div class="modal-content"><h3>Создание группы</h3><input type="text" id="groupNameInput" placeholder="Название группы"><div class="modal-buttons" style="margin-top:1rem;"><button id="cancelGroupBtn" class="btn">Отмена</button><button id="confirmGroupBtn" class="btn btn-primary">Создать</button></div></div></div>
 <script>
     let groups=[], users=[], selectedFilterGroup="";
+    
+    async function checkAuth() {
+        const res = await fetch('/api/check-session');
+        const data = await res.json();
+        if (!data.authenticated) {
+            window.location.href = 'index.html';
+            return false;
+        }
+        return true;
+    }
+
     async function fetchUsersData(){const r=await fetch('/api/users');return r.json();}
     async function saveUsersData(data){await fetch('/api/users',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});}
     async function loadData(){const data=await fetchUsersData();groups=data.groups||[];users=data.users||[];renderGroups();renderGroupSelect();renderUsers();}
@@ -80,7 +91,8 @@
         saveAndSync();renderUsers();userModal.style.display='none';document.getElementById('namesInput').value='';alert(`Добавлено ${finalNames.length} пользователей`);
     });
     function escapeHtml(s){if(!s)return '';return s.replace(/[&<>]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[m]));}
-    loadData();
+    
+    checkAuth().then(ok => { if(ok) loadData(); });
 </script>
 </body>
 </html>
