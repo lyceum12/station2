@@ -33,12 +33,6 @@
         .modal-content{background:white;border-radius:32px;padding:2rem;max-width:500px;width:90%;}
         .modal-content input,.modal-content select{width:100%;padding:0.8rem;margin-bottom:1rem;border:1px solid #cbd5e1;border-radius:40px;}
         .modal-buttons{display:flex;justify-content:flex-end;gap:1rem;margin-top:1rem;}
-        .admin-section{margin-top:2rem;background:white;border-radius:32px;padding:1.5rem;}
-        .admin-section h2{font-size:1.3rem;margin-bottom:1rem;}
-        .admin-buttons{display:flex;gap:1rem;flex-wrap:wrap;margin-bottom:1rem;}
-        table{width:100%;border-collapse:collapse;margin-top:1rem;}
-        th,td{border:1px solid #e2e8f0;padding:0.75rem;text-align:left;}
-        th{background:#f8fafc;}
         .toast{position:fixed;bottom:20px;right:20px;background:#10b981;color:white;padding:12px 20px;border-radius:40px;z-index:1000;animation:fadein 0.3s;}
         .toast.error{background:#ef4444;}
         @keyframes fadein{from{opacity:0;transform:translateX(100%);}to{opacity:1;transform:translateX(0);}}
@@ -56,8 +50,8 @@
 
 <div class="admin-panel" id="adminPanel">
     <div class="top-bar">
-        <button id="exportZipBtn" class="btn">Сохранить всё (ZIP)</button>
-        <label class="btn">Загрузить всё (ZIP)<input type="file" id="importZipInput" accept=".zip" style="display:none;"></label>
+        <button id="exportDbBtn" class="btn">Сохранить БД в файл</button>
+        <label class="btn">Загрузить БД из файла<input type="file" id="importDbInput" accept=".db" style="display:none;"></label>
         <button id="changePwdBtn" class="btn">Сменить пароль</button>
         <button id="adminsBtn" class="btn btn-outline" style="display:none;">Администраторы</button>
         <button id="logoutBtn" class="btn">Выйти</button>
@@ -74,30 +68,29 @@
     <footer>Редактируйте вопросы, добавляйте изображения</footer>
 </div>
 
-<!-- Модальные окна (смена пароля, администраторы, логи) – без изменений -->
+<!-- Модальные окна -->
 <div id="changePwdModal" class="modal"><div class="modal-content"><h3>Смена пароля</h3><input type="password" id="oldPwd" placeholder="Старый пароль"><input type="password" id="newPwd" placeholder="Новый пароль"><input type="password" id="confirmPwd" placeholder="Подтверждение"><div class="modal-buttons"><button id="cancelPwdBtn" class="btn">Отмена</button><button id="savePwdBtn" class="btn btn-primary">Сохранить</button></div></div></div>
-<div id="adminsModal" class="modal"><div class="modal-content"><h2>Управление администраторами</h2><div style="margin-bottom:1rem;"><button id="createAdminBtnInModal" class="btn btn-primary">+ Добавить администратора</button><button id="viewLogsBtnInModal" class="btn">Просмотр логов</button></div><div id="adminsListInModal"></div><div class="modal-buttons"><button id="closeAdminsModalBtn" class="btn">Закрыть</button></div></div></div>
-<div id="adminModal" class="modal"><div class="modal-content"><h3>Новый администратор</h3><input type="text" id="newAdminUsername" placeholder="Логин"><input type="password" id="newAdminPassword" placeholder="Пароль"><select id="newAdminRole"><option value="admin">Обычный администратор</option><option value="super_admin">Главный администратор</option></select><div class="modal-buttons"><button id="cancelAdminBtn" class="btn">Отмена</button><button id="saveAdminBtn" class="btn btn-primary">Создать</button></div></div></div>
-<div id="logsModal" class="modal"><div class="modal-content" style="max-width:800px;"><h3>Логи действий</h3><div id="logsList" style="max-height:400px;overflow-y:auto;"></div><div class="modal-buttons"><button id="closeLogsBtn" class="btn">Закрыть</button></div></div></div>
+<div id="adminsModal" class="modal"><div class="modal-content"><h2>Управление администраторами</h2><div><button id="createAdminBtn" class="btn btn-primary">+ Добавить</button></div><div id="adminsList"></div><div class="modal-buttons"><button id="closeAdminsModalBtn" class="btn">Закрыть</button></div></div></div>
+<div id="adminModal" class="modal"><div class="modal-content"><h3>Новый администратор</h3><input type="text" id="newAdminUsername" placeholder="Логин"><input type="password" id="newAdminPassword" placeholder="Пароль"><select id="newAdminRole"><option value="admin">Обычный</option><option value="super_admin">Главный</option></select><div class="modal-buttons"><button id="cancelAdminBtn" class="btn">Отмена</button><button id="saveAdminBtn" class="btn btn-primary">Создать</button></div></div></div>
+<div id="logsModal" class="modal"><div class="modal-content"><h3>Логи действий</h3><div id="logsList"></div><div class="modal-buttons"><button id="closeLogsBtn" class="btn">Закрыть</button></div></div></div>
 
 <script>
     let currentUserRole = null;
     function showToast(msg, isError=false){const t=document.createElement('div');t.className='toast'+(isError?' error':'');t.textContent=msg;document.body.appendChild(t);setTimeout(()=>t.remove(),3000);}
     async function fetchJson(url, options={}) {
-        const res = await fetch(url, {...options, headers:{'Content-Type':'application/json', ...(options.headers||{})}});
+        const res = await fetch(url, {...options, headers:{'Content-Type':'application/json', ...(options.headers||{})}, credentials:'include'});
         if(!res.ok) throw new Error(await res.text());
         return res.json();
     }
     async function checkSession() {
-        const res = await fetch('/api/check-session');
+        const res = await fetch('/api/check-session', { credentials:'include' });
         const data = await res.json();
         if(data.authenticated) {
             currentUserRole = data.role;
             document.getElementById('loginContainer').style.display = 'none';
             document.getElementById('adminPanel').style.display = 'block';
             const adminsBtn = document.getElementById('adminsBtn');
-            if(currentUserRole === 'super_admin') adminsBtn.style.display = 'inline-flex';
-            else adminsBtn.style.display = 'none';
+            adminsBtn.style.display = currentUserRole === 'super_admin' ? 'inline-flex' : 'none';
             loadTests();
         } else {
             document.getElementById('loginContainer').style.display = 'block';
@@ -124,99 +117,86 @@
             if(confirm('Удалить тест?')) {
                 let tests2 = await fetchJson('/api/tests');
                 tests2 = tests2.filter(t => t.id !== btn.dataset.id);
-                await fetchJson('/api/tests', {method:'POST', body:JSON.stringify(tests2)});
+                await fetchJson('/api/tests', { method:'POST', body:JSON.stringify(tests2) });
                 loadTests();
                 showToast('Тест удалён');
             }
         });
     }
-    // Функции для администраторов (аналогичны предыдущей версии)
-    async function loadAdminsList() {
-        try {
-            const admins = await fetchJson('/api/users-list');
-            const container = document.getElementById('adminsListInModal');
-            if(!admins.length) { container.innerHTML = '<p>Нет администраторов</p>'; return; }
-            container.innerHTML = `<table><thead><tr><th>Логин</th><th>Роль</th><th>Дата создания</th><th>Действия</th></tr></thead><tbody>${admins.map(a => `<tr><td>${escapeHtml(a.username)}</td><td>${escapeHtml(a.role)}</td><td>${new Date(a.created_at).toLocaleString()}</td><td>${a.username !== 'admin' ? `<button class="btn delete-admin" data-id="${a.id}">Удалить</button>` : ''}</td></tr>`).join('')}</tbody></table>`;
-            document.querySelectorAll('.delete-admin').forEach(btn => btn.onclick = async () => {
-                if(confirm('Удалить администратора?')) {
-                    await fetchJson('/api/delete-admin', { method:'POST', body:JSON.stringify({ id: parseInt(btn.dataset.id) }) });
-                    loadAdminsList();
-                    showToast('Администратор удалён');
-                }
-            });
-        } catch(e) { showToast(e.message, true); }
+    async function loadAdmins() {
+        const admins = await fetchJson('/api/admins');
+        const container = document.getElementById('adminsList');
+        if(!admins.length) { container.innerHTML = '<p>Нет администраторов</p>'; return; }
+        container.innerHTML = `<table><thead><tr><th>Логин</th><th>Роль</th><th>Дата</th><th>Действия</th></tr></thead><tbody>${admins.map(a => `<tr><td>${escapeHtml(a.username)}</td><td>${escapeHtml(a.role)}</td><td>${new Date(a.created_at).toLocaleString()}</td><td>${a.username !== 'admin' ? `<button class="btn delete-admin" data-id="${a.id}">Удалить</button>` : ''}</td></tr>`).join('')}</tbody></td>`;
+        document.querySelectorAll('.delete-admin').forEach(btn => btn.onclick = async () => {
+            if(confirm('Удалить администратора?')) {
+                await fetch(`/api/admins/${btn.dataset.id}`, { method:'DELETE', credentials:'include' });
+                loadAdmins();
+                showToast('Администратор удалён');
+            }
+        });
     }
     async function loadLogs() {
-        try {
-            const logs = await fetchJson('/api/logs');
-            const container = document.getElementById('logsList');
-            if(!logs.length) { container.innerHTML = '<p>Логов нет</p>'; return; }
-            container.innerHTML = `<table style="width:100%;font-size:0.8rem;"><thead><tr><th>Дата</th><th>Пользователь</th><th>Действие</th><th>IP</th></tr></thead><tbody>${logs.map(l => `<tr><td>${new Date(l.timestamp).toLocaleString()}</td><td>${escapeHtml(l.username)}</td><td>${escapeHtml(l.action)}</td><td>${escapeHtml(l.ip)}</td></tr>`).join('')}</tbody></table>`;
-        } catch(e) { showToast(e.message, true); }
+        const logs = await fetchJson('/api/logs');
+        const container = document.getElementById('logsList');
+        if(!logs.length) { container.innerHTML = '<p>Логов нет</p>'; return; }
+        container.innerHTML = `<table><thead><tr><th>Дата</th><th>Пользователь</th><th>Действие</th><th>IP</th></tr></thead><tbody>${logs.map(l => `<tr><td>${new Date(l.timestamp).toLocaleString()}</td><td>${escapeHtml(l.username)}</td><td>${escapeHtml(l.action)}</td><td>${escapeHtml(l.ip)}</td></tr>`).join('')}</tbody></table>`;
     }
     function escapeHtml(s){if(!s)return '';return s.replace(/[&<>]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[m]));}
-    
-    document.getElementById('exportZipBtn').onclick = () => window.location.href = '/api/export-all';
-    document.getElementById('importZipInput').onchange = async (e) => {
+    document.getElementById('exportDbBtn').onclick = () => window.location.href = '/api/export-db';
+    document.getElementById('importDbInput').onchange = async (e) => {
         const file = e.target.files[0];
         if(!file) return;
         const formData = new FormData();
-        formData.append('zip', file);
-        try {
-            const res = await fetch('/api/import-all', { method: 'POST', body: formData });
-            if(res.ok){
-                showToast('Данные загружены, страница будет перезагружена');
-                setTimeout(()=>location.reload(), 1500);
-            } else showToast('Ошибка импорта', true);
-        } catch(err) { showToast(err.message, true); }
+        formData.append('db', file);
+        const res = await fetch('/api/import-db', { method:'POST', body:formData, credentials:'include' });
+        if(res.ok) { showToast('База импортирована, страница будет перезагружена'); setTimeout(()=>location.reload(),1500); }
+        else showToast('Ошибка импорта', true);
         e.target.value = '';
     };
-    
     document.getElementById('loginBtn').onclick = async () => {
         const username = document.getElementById('username').value;
         const password = document.getElementById('password').value;
         try {
-            const res = await fetch('/api/login', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({username,password}) });
+            const res = await fetch('/api/login', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({username,password}), credentials:'include' });
             const data = await res.json();
             if(data.success) checkSession();
             else showToast('Неверный логин или пароль', true);
         } catch(e) { showToast(e.message, true); }
     };
-    document.getElementById('logoutBtn').onclick = async () => { await fetch('/api/logout', { method:'POST' }); checkSession(); };
+    document.getElementById('logoutBtn').onclick = async () => { await fetch('/api/logout', { method:'POST', credentials:'include' }); checkSession(); };
     document.getElementById('changePwdBtn').onclick = () => document.getElementById('changePwdModal').style.display = 'flex';
     document.getElementById('cancelPwdBtn').onclick = () => document.getElementById('changePwdModal').style.display = 'none';
     document.getElementById('savePwdBtn').onclick = async () => {
         const oldPwd = document.getElementById('oldPwd').value, newPwd = document.getElementById('newPwd').value, confirm = document.getElementById('confirmPwd').value;
         if(newPwd !== confirm) { showToast('Пароли не совпадают', true); return; }
         try {
-            await fetch('/api/change-password', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ oldPassword: oldPwd, newPassword: newPwd }) });
+            await fetch('/api/change-password', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ oldPassword: oldPwd, newPassword: newPwd }), credentials:'include' });
             showToast('Пароль изменён, войдите заново');
             document.getElementById('changePwdModal').style.display = 'none';
-            await fetch('/api/logout', { method:'POST' });
+            await fetch('/api/logout', { method:'POST', credentials:'include' });
             checkSession();
         } catch(e) { showToast(e.message, true); }
     };
-    // Управление администраторами
     const adminsModal = document.getElementById('adminsModal');
-    document.getElementById('adminsBtn').onclick = async () => { await loadAdminsList(); adminsModal.style.display = 'flex'; };
+    document.getElementById('adminsBtn').onclick = async () => { await loadAdmins(); adminsModal.style.display = 'flex'; };
     document.getElementById('closeAdminsModalBtn').onclick = () => adminsModal.style.display = 'none';
     const adminModal = document.getElementById('adminModal');
-    document.getElementById('createAdminBtnInModal').onclick = () => adminModal.style.display = 'flex';
+    document.getElementById('createAdminBtn').onclick = () => adminModal.style.display = 'flex';
     document.getElementById('cancelAdminBtn').onclick = () => adminModal.style.display = 'none';
     document.getElementById('saveAdminBtn').onclick = async () => {
         const username = document.getElementById('newAdminUsername').value.trim(), password = document.getElementById('newAdminPassword').value, role = document.getElementById('newAdminRole').value;
         if(!username || !password) { showToast('Заполните логин и пароль', true); return; }
         try {
-            await fetchJson('/api/create-admin', { method:'POST', body:JSON.stringify({ username, password, role }) });
+            await fetch('/api/admins', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ username, password, role }), credentials:'include' });
             showToast('Администратор создан');
             adminModal.style.display = 'none';
-            await loadAdminsList();
+            await loadAdmins();
         } catch(e) { showToast(e.message, true); }
     };
     const logsModal = document.getElementById('logsModal');
     document.getElementById('viewLogsBtnInModal').onclick = async () => { await loadLogs(); logsModal.style.display = 'flex'; };
     document.getElementById('closeLogsBtn').onclick = () => logsModal.style.display = 'none';
-    
     document.getElementById('manageUsersBtn').onclick = () => location.href = 'users.html';
     document.getElementById('manageTasksBaseBtn').onclick = () => location.href = 'tasks-base.html';
     document.getElementById('createTestBtn').onclick = async () => {
