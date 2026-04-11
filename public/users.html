@@ -27,11 +27,11 @@
 <body>
 <div class="container">
     <a href="index.html" class="back-link">← На главную</a>
-    <div class="card"><h2>Группы</h2><button id="addGroupBtn" class="btn">+ Добавить группу</button><table id="groupsTable"><thead><tr><th>Название группы</th><th>Действия</th></tr></thead><tbody id="groupsTbody"></tbody></table></div>
-    <div class="card"><h2>Пользователи</h2><div><label>Фильтр по группе:</label><select id="groupSelect"></select><button id="addUserBtn" class="btn" style="margin-left:1rem;">+ Добавить пользователя</button></div><table id="usersTable"><thead><tr><th>ФИО</th><th>Группа</th><th>Действия</th></tr></thead><tbody id="usersTbody"></tbody></table></div>
+    <div class="card"><h2>Группы</h2><button id="addGroupBtn" class="btn">+ Добавить группу</button><table id="groupsTable"><thead><tr><th>Название группы</th><th>Действия</th></tr></thead><tbody id="groupsTbody"></tbody></tr></div>
+    <div class="card"><h2>Пользователи</h2><div><label>Фильтр по группе:</label><select id="groupSelect"></select><button id="addUserBtn" class="btn" style="margin-left:1rem;">+ Добавить пользователя</button></div><table id="usersTable"><thead><tr><th>ФИО</th><th>Код участника</th><th>Группа</th><th>Действия</th></tr></thead><tbody id="usersTbody"></tbody></table></div>
 </div>
 
-<div id="userModal" class="modal"><div class="modal-content"><h3>Добавление пользователей</h3><p>Введите ФИО (по одному на строку или через запятую)</p><textarea id="namesInput" placeholder="Иванов Иван Иванович&#10;Петров Петр Петрович"></textarea><div><label>Группа:</label><select id="userGroupSelect"></select></div><div class="modal-buttons"><button id="cancelModalBtn" class="btn">Отмена</button><button id="confirmModalBtn" class="btn btn-primary">Добавить</button></div></div></div>
+<div id="userModal" class="modal"><div class="modal-content"><h3>Добавление пользователей</h3><p>Введите ФИО (по одному на строку или через запятую)</p><textarea id="namesInput" placeholder="Иванов Иван Иванович&#10;Петров Петр Петрович"></textarea><p>Код участника будет сгенерирован автоматически (6 цифр)</p><div><label>Группа:</label><select id="userGroupSelect"></select></div><div class="modal-buttons"><button id="cancelModalBtn" class="btn">Отмена</button><button id="confirmModalBtn" class="btn btn-primary">Добавить</button></div></div></div>
 <div id="groupModal" class="modal"><div class="modal-content"><h3>Создание группы</h3><input type="text" id="groupNameInput" placeholder="Название группы"><div class="modal-buttons" style="margin-top:1rem;"><button id="cancelGroupBtn" class="btn">Отмена</button><button id="confirmGroupBtn" class="btn btn-primary">Создать</button></div></div></div>
 
 <script>
@@ -41,10 +41,22 @@
     async function saveUsersData(data){await fetch('/api/users',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});}
     async function loadData(){const data=await fetchUsersData();groups=data.groups||[];users=data.users||[];renderGroups();renderGroupSelect();renderUsers();}
     function saveAndSync(){saveUsersData({groups,users});}
+    function generateUniqueCode(){
+        let code;
+        let exists = true;
+        do {
+            code = Math.floor(100000 + Math.random() * 900000).toString();
+            exists = users.some(u => u.registrationNumber === code);
+        } while(exists);
+        return code;
+    }
+    function isCodeUnique(code, excludeUserId=null){
+        return !users.some(u => u.registrationNumber === code && (excludeUserId === null || u.id !== excludeUserId));
+    }
     function renderGroups(){
         const tbody=document.getElementById('groupsTbody');
-        if(!groups.length)tbody.innerHTML='<tr><td colspan="2">Нет групп</div>';return;
-        tbody.innerHTML=groups.map((g,idx)=>`<tr><td><input type="text" class="group-name" value="${escapeHtml(g.name)}" data-idx="${idx}"></td><td><button class="btn save-group" data-idx="${idx}">Сохранить</button> <button class="btn delete-group" data-idx="${idx}" style="color:red;">Удалить</button></td></tr>`).join('');
+        if(!groups.length)tbody.innerHTML='<tr><td colspan="2">Нет групп</td></tr>';
+        else tbody.innerHTML=groups.map((g,idx)=>`<tr><td><input type="text" class="group-name" value="${escapeHtml(g.name)}" data-idx="${idx}"></td><td><button class="btn save-group" data-idx="${idx}">Сохранить</button> <button class="btn delete-group" data-idx="${idx}" style="color:red;">Удалить</button></td></tr>`).join('');
         document.querySelectorAll('.save-group').forEach(btn=>btn.addEventListener('click',()=>{const idx=parseInt(btn.dataset.idx);const newName=document.querySelector(`.group-name[data-idx="${idx}"]`).value.trim();if(newName){groups[idx].name=newName;saveAndSync();renderGroups();renderGroupSelect();renderUsers();showToast('Группа сохранена');}}));
         document.querySelectorAll('.delete-group').forEach(btn=>btn.addEventListener('click',()=>{if(confirm('Удалить группу?')){groups.splice(parseInt(btn.dataset.idx),1);saveAndSync();renderGroups();renderGroupSelect();renderUsers();showToast('Группа удалена');}}));
     }
@@ -59,12 +71,14 @@
     function renderUsers(){
         let filtered=selectedFilterGroup?users.filter(u=>u.group===selectedFilterGroup):users;
         const tbody=document.getElementById('usersTbody');
-        if(!filtered.length){tbody.innerHTML='<tr><td colspan="3">Нет пользователей</td></tr>';return;}
+        if(!filtered.length){tbody.innerHTML='<tr><td colspan="4">Нет пользователей</td></tr>';return;}
         tbody.innerHTML=filtered.map((u,idx)=>{
             const origIdx=users.findIndex(us=>us.id===u.id);
-            return `<tr><td><input type="text" class="user-name" value="${escapeHtml(u.fullName)}" data-idx="${origIdx}"></td><td><select class="user-group" data-idx="${origIdx}"><option value="">Без группы</option>${groups.map(g=>`<option value="${escapeHtml(g.name)}" ${u.group===g.name?'selected':''}>${escapeHtml(g.name)}</option>`).join('')}</select></td><td><button class="btn save-user" data-idx="${origIdx}">Сохранить</button> <button class="btn delete-user" data-idx="${origIdx}" style="color:red;">Удалить</button></td></tr>`;
+            return `<tr><td><input type="text" class="user-name" value="${escapeHtml(u.fullName)}" data-idx="${origIdx}"></td><td><input type="text" class="user-code" value="${escapeHtml(u.registrationNumber)}" data-idx="${origIdx}"></td><td><select class="user-group" data-idx="${origIdx}"><option value="">Без группы</option>${groups.map(g=>`<option value="${escapeHtml(g.name)}" ${u.group===g.name?'selected':''}>${escapeHtml(g.name)}</option>`).join('')}</select></td><td><button class="btn save-user" data-idx="${origIdx}">Сохранить</button> <button class="btn delete-user" data-idx="${origIdx}" style="color:red;">Удалить</button></td></tr>`;
         }).join('');
-        document.querySelectorAll('.save-user').forEach(btn=>btn.addEventListener('click',()=>{const idx=parseInt(btn.dataset.idx);const row=btn.closest('tr');const name=row.querySelector('.user-name').value.trim();const group=row.querySelector('.user-group').value;if(!name){showToast('Введите ФИО',true);return;}users[idx].fullName=name;users[idx].group=group||null;saveAndSync();renderUsers();showToast('Пользователь сохранён');}));
+        document.querySelectorAll('.save-user').forEach(btn=>btn.addEventListener('click',()=>{const idx=parseInt(btn.dataset.idx);const row=btn.closest('tr');const name=row.querySelector('.user-name').value.trim();const code=row.querySelector('.user-code').value.trim();const group=row.querySelector('.user-group').value;if(!name||!code){showToast('Заполните ФИО и код',true);return;}
+            if(!isCodeUnique(code, users[idx].id)){showToast('Пользователь с таким кодом участника уже существует',true);return;}
+            users[idx].fullName=name;users[idx].registrationNumber=code;users[idx].group=group||null;saveAndSync();renderUsers();showToast('Пользователь сохранён');}));
         document.querySelectorAll('.delete-user').forEach(btn=>btn.addEventListener('click',()=>{if(confirm('Удалить пользователя?')){users.splice(parseInt(btn.dataset.idx),1);saveAndSync();renderUsers();showToast('Пользователь удалён');}}));
     }
     const groupModal=document.getElementById('groupModal');
@@ -81,8 +95,13 @@
         for(let line of names){if(line.includes(',')) finalNames.push(...line.split(',').map(s=>s.trim()));else if(line.trim()) finalNames.push(line.trim());}
         if(!finalNames.length){showToast('Введите хотя бы одно ФИО',true);return;}
         const selectedGroup=document.getElementById('userGroupSelect').value||null;
-        for(let name of finalNames){users.push({id:Date.now()+'_'+Math.random(),fullName:name,group:selectedGroup});}
-        saveAndSync();renderUsers();userModal.style.display='none';document.getElementById('namesInput').value='';showToast(`Добавлено ${finalNames.length} пользователей`);
+        const newUsers = [];
+        for(let name of finalNames){
+            let code = generateUniqueCode();
+            newUsers.push({id:Date.now()+'_'+Math.random(),fullName:name,registrationNumber:code,group:selectedGroup});
+        }
+        users.push(...newUsers);
+        saveAndSync();renderUsers();userModal.style.display='none';document.getElementById('namesInput').value='';showToast(`Добавлено ${newUsers.length} пользователей`);
     });
     function escapeHtml(s){if(!s)return '';return s.replace(/[&<>]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[m]));}
     loadData();
