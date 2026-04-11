@@ -122,17 +122,114 @@
             showToast('Ошибка сохранения', true);
         }
     };
-    // Остальной код (renderStudents, addStudent, addFromGroup, saveTimeBtn, saveShowAnswersBtn, calculateScore, renderResults, showResultDetails, openReevaluateModal) полностью идентичен предыдущей версии
-    // Для краткости приведу только изменённые функции, но в реальном файле они должны быть все.
-    // Ниже – заглушки, реальный код нужно скопировать из предыдущей стабильной версии manage-test.html
-    function renderStudents(){}
-    function isAnswerCorrect(){}
-    function calculateScoreWithOverride(){}
-    async function renderResults(){}
-    function showResultDetails(){}
-    function openReevaluateModal(){}
-    function escapeHtml(s){if(!s)return '';return s.replace(/[&<>]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[m]));}
+    function renderStudents(){
+        const tbody=document.getElementById('studentsTbody');
+        const students=currentTest.students||[];
+        if(!students.length){tbody.innerHTML='<tr><td colspan="3">Нет учеников</td>';return;}
+        tbody.innerHTML=students.map((s,idx)=>`<tr><td><input type="text" class="student-name" value="${escapeHtml(s.fullName)}" data-idx="${idx}"></td><td><input type="text" class="student-reg" value="${escapeHtml(s.registrationNumber)}" data-idx="${idx}"></td><td><button class="btn save-student" data-idx="${idx}">Сохранить</button> <button class="btn delete-student" data-idx="${idx}" style="color:red;">Удалить</button></td></tr>`).join('');
+        document.querySelectorAll('.save-student').forEach(btn=>btn.addEventListener('click',async()=>{const idx=parseInt(btn.dataset.idx);const row=btn.closest('tr');const name=row.querySelector('.student-name').value.trim();const reg=row.querySelector('.student-reg').value.trim();if(name&&reg){let tests=await fetchTests();const test=tests.find(t=>t.id===currentTestId);if(test){if(!test.students)test.students=[];test.students[idx]={fullName:name,registrationNumber:reg};await saveTests(tests);currentTest=test;renderStudents();}}else showToast('Заполните поля',true);}));
+        document.querySelectorAll('.delete-student').forEach(btn=>btn.addEventListener('click',async()=>{if(confirm('Удалить ученика?')){let tests=await fetchTests();const test=tests.find(t=>t.id===currentTestId);if(test&&test.students){test.students.splice(parseInt(btn.dataset.idx),1);await saveTests(tests);currentTest=test;renderStudents();showToast('Ученик удалён');}}}));
+    }
+    document.getElementById('addStudentBtn').addEventListener('click',async()=>{const name=prompt('ФИО');if(!name)return;const reg=prompt('Код участника');if(!reg)return;let tests=await fetchTests();const test=tests.find(t=>t.id===currentTestId);if(test){if(!test.students)test.students=[];test.students.push({fullName:name.trim(),registrationNumber:reg.trim()});await saveTests(tests);currentTest=test;renderStudents();showToast('Ученик добавлен');}});
+    document.getElementById('addFromGroupBtn').addEventListener('click',async()=>{const groupName=document.getElementById('groupSelect').value;if(!groupName){showToast('Выберите группу',true);return;}const usersInGroup=allUsers.filter(u=>u.group===groupName);if(!usersInGroup.length){showToast('В группе нет пользователей',true);return;}let tests=await fetchTests();const test=tests.find(t=>t.id===currentTestId);if(test){if(!test.students)test.students=[];for(let u of usersInGroup)if(!test.students.some(s=>s.registrationNumber===u.registrationNumber))test.students.push({fullName:u.fullName,registrationNumber:u.registrationNumber});await saveTests(tests);currentTest=test;renderStudents();showToast(`Добавлено ${usersInGroup.length} учеников`);}});
+    document.getElementById('saveTimeBtn').addEventListener('click',async()=>{const nt=parseInt(document.getElementById('timeLimit').value);if(isNaN(nt)||nt<1){showToast('Введите корректное время',true);return;}let tests=await fetchTests();const test=tests.find(t=>t.id===currentTestId);if(test){test.timeLimitMinutes=nt;await saveTests(tests);currentTest=test;showToast('Время сохранено');}});
+    document.getElementById('saveShowAnswersBtn').addEventListener('click',async()=>{const show=document.getElementById('showAnswersCheckbox').checked;let tests=await fetchTests();const test=tests.find(t=>t.id===currentTestId);if(test){test.showCorrectAnswersAfterTest=show;await saveTests(tests);currentTest=test;showToast('Настройка сохранена');}});
+    
+    function isAnswerCorrect(question, userAnswerText, overrideFlag){
+        if(overrideFlag!==undefined) return overrideFlag;
+        let correctIndices=question.correctIndices||question.answers?.reduce((arr,a,idx)=>{if(a.isCorrect)arr.push(idx);return arr},[]);
+        const opts=question.answerOptions||[];
+        const userLow=userAnswerText?.trim().toLowerCase()||'';
+        const userSelected=opts.reduce((arr,opt,i)=>opt.toLowerCase()===userLow?[...arr,i]:arr,[]);
+        return userSelected.length===correctIndices.length && userSelected.every(i=>correctIndices.includes(i));
+    }
+    function calculateScoreWithOverride(result, questions){
+        let totalPoints=0, earnedPoints=0;
+        for(let ans of result.answers){
+            const q=questions.find(qq=>qq.id===ans.questionId);
+            if(!q) continue;
+            const points=q.points||1;
+            totalPoints+=points;
+            const isCorrect=ans.isCorrectOverride!==undefined?ans.isCorrectOverride:isAnswerCorrect(q,ans.answerText);
+            if(isCorrect) earnedPoints+=points;
+        }
+        return {earned:earnedPoints,total:totalPoints};
+    }
+    async function renderResults(){
+        const container=document.getElementById('resultsList');
+        const results=currentTest.results||[];
+        const questions=currentTest.questions||[];
+        const filterGroup=document.getElementById('resultGroupFilter').value;
+        let filtered=results;
+        if(filterGroup) filtered=results.filter(r=>allUsers.find(u=>u.registrationNumber===r.studentRegNumber)?.group===filterGroup);
+        if(!filtered.length){container.innerHTML='<p>Нет результатов</p>';return;}
+        container.innerHTML=`<table><thead><tr><th>Ученик</th><th>Код</th><th>Группа</th><th>Дата</th><th>Баллы</th><th>Действия</th></tr></thead><tbody>${filtered.map((r,idx)=>{const origIdx=currentTest.results.findIndex(rr=>rr.finishedAt===r.finishedAt&&rr.studentRegNumber===r.studentRegNumber);const score=calculateScoreWithOverride(r,questions);const group=allUsers.find(u=>u.registrationNumber===r.studentRegNumber)?.group||'Без группы';return `<tr><td>${escapeHtml(r.studentName)}</td><td>${escapeHtml(r.studentRegNumber)}</td><td>${escapeHtml(group)}</td><td>${new Date(r.finishedAt).toLocaleString()}</td><td>${score.earned}/${score.total}</td><td><button class="btn view-result" data-idx="${origIdx}">Просмотр</button> <button class="btn reevaluate-result" data-idx="${origIdx}">Переоценить</button></td></tr>`;}).join('')}</tbody></table>`;
+        document.querySelectorAll('.view-result').forEach(btn=>btn.addEventListener('click',()=>{const idx=parseInt(btn.dataset.idx);showResultDetails(currentTest.results[idx]);}));
+        document.querySelectorAll('.reevaluate-result').forEach(btn=>btn.addEventListener('click',()=>{const idx=parseInt(btn.dataset.idx);openReevaluateModal(currentTest.results[idx], idx);}));
+    }
+    function showResultDetails(result){
+        const modal=document.getElementById('answersModal'), container=document.getElementById('modalAnswers');
+        const questions=currentTest.questions||[];
+        let html=`<p><strong>Ученик:</strong> ${escapeHtml(result.studentName)}</p><p><strong>Код:</strong> ${escapeHtml(result.studentRegNumber)}</p><p><strong>Завершён:</strong> ${new Date(result.finishedAt).toLocaleString()}</p><hr>`;
+        for(let i=0;i<questions.length;i++){
+            const q=questions[i];
+            const points=q.points||1;
+            const userAns=result.answers.find(a=>a.questionId===q.id);
+            const userAnswerText=userAns?userAns.answerText:'(нет ответа)';
+            let correctIndices=q.correctIndices||q.answers?.reduce((arr,a,idx)=>{if(a.isCorrect)arr.push(idx);return arr},[]);
+            const correctOptions=(q.answerOptions||[]).filter((_,idx)=>correctIndices.includes(idx)).join(', ');
+            const isCorrect=userAns?.isCorrectOverride!==undefined?userAns.isCorrectOverride:isAnswerCorrect(q,userAns?.answerText);
+            const statusClass=isCorrect?'correct':'incorrect';
+            const statusText=isCorrect?`Правильно (+${points} балл${points!==1?'а':''})`:`Неправильно (0 баллов)`;
+            html+=`<div class="question-detail"><strong>Вопрос ${i+1}: ${escapeHtml(q.titleQuestion)} (${points} балл.)</strong><br>Ответ: ${escapeHtml(userAnswerText)}<br>Правильный: ${escapeHtml(correctOptions)}<br><span class="${statusClass}">${statusText}</span>`;
+            if(userAns?.files?.length) html+=`<div><strong>Файлы ученика:</strong> ${userAns.files.map(f=>`<a href="${f.dataURL}" download="${f.name}" target="_blank" class="file-link">📎 ${escapeHtml(f.name)}</a>`).join(' ')}</div>`;
+            if(q.attachments && q.attachments.length) html+=`<div><strong>Дополнительные файлы:</strong> ${q.attachments.map(f=>`<a href="${f.url}" download="${f.name}" target="_blank" class="file-link">📎 ${escapeHtml(f.name)}</a>`).join(' ')}</div>`;
+            html+=`</div>`;
+        }
+        container.innerHTML=html; modal.style.display='flex';
+    }
+    function openReevaluateModal(result, resultIdx){
+        const modal=document.getElementById('reevaluateModal'), container=document.getElementById('reevaluateList');
+        const questions=currentTest.questions||[];
+        let html='';
+        for(let i=0;i<questions.length;i++){
+            const q=questions[i];
+            const userAns=result.answers.find(a=>a.questionId===q.id);
+            const userAnswerText=userAns?userAns.answerText:'';
+            const currentOverride=userAns?.isCorrectOverride;
+            const isCorrectDefault=isAnswerCorrect(q,userAnswerText);
+            const isChecked=(currentOverride!==undefined)?currentOverride:isCorrectDefault;
+            html+=`<div style="margin-bottom:1rem;"><strong>${i+1}. ${escapeHtml(q.titleQuestion)} (${q.points||1} балл.)</strong><br>Ответ: ${escapeHtml(userAnswerText)}<br><label><input type="checkbox" class="correct-checkbox" data-qidx="${i}" ${isChecked?'checked':''}> Считать правильным</label></div>`;
+        }
+        container.innerHTML=html;
+        modal.style.display='flex';
+        document.getElementById('saveReevalBtn').onclick=async()=>{
+            const newAnswers=[...result.answers];
+            for(let i=0;i<questions.length;i++){
+                const cb=document.querySelector(`.correct-checkbox[data-qidx="${i}"]`);
+                if(cb){
+                    const isCorrectOverride=cb.checked;
+                    const qid=questions[i].id;
+                    const idx=newAnswers.findIndex(a=>a.questionId===qid);
+                    if(idx!==-1) newAnswers[idx].isCorrectOverride=isCorrectOverride;
+                    else newAnswers.push({questionId:qid,answerText:'',isCorrectOverride});
+                }
+            }
+            let tests=await fetchTests();
+            const testIdx=tests.findIndex(t=>t.id===currentTestId);
+            if(testIdx!==-1){
+                tests[testIdx].results[resultIdx].answers=newAnswers;
+                await saveTests(tests);
+                currentTest=tests[testIdx];
+                renderResults();
+                showToast('Результаты переоценены');
+            }
+            modal.style.display='none';
+        };
+        document.getElementById('cancelReevalBtn').onclick=()=>modal.style.display='none';
+    }
     document.getElementById('closeModalBtn').addEventListener('click',()=>document.getElementById('answersModal').style.display='none');
+    function escapeHtml(s){if(!s)return '';return s.replace(/[&<>]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[m]));}
     loadAll();
 </script>
 </body>
