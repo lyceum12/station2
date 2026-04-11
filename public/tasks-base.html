@@ -30,6 +30,9 @@
         .toast{position:fixed;bottom:20px;right:20px;background:#10b981;color:white;padding:12px 20px;border-radius:40px;z-index:1000;animation:fadein 0.3s;}
         .toast.error{background:#ef4444;}
         @keyframes fadein{from{opacity:0;transform:translateX(100%);}to{opacity:1;transform:translateX(0);}}
+        .file-attachments{margin-top:1rem;border-top:1px solid #e2e8f0;padding-top:1rem;}
+        .file-item{display:flex;align-items:center;gap:10px;background:#f8fafc;padding:0.5rem;border-radius:20px;margin-bottom:8px;}
+        .file-name{flex:1;font-size:0.9rem;}
     </style>
 </head>
 <body>
@@ -37,17 +40,28 @@
     <a href="index.html" class="back-link">← На главную</a>
     <div class="card"><h2>База заданий</h2><button id="createTaskBtn" class="btn btn-primary">+ Создать задание</button><div id="tasksList" style="margin-top:1rem;"></div></div>
 </div>
-<div id="taskModal" class="modal"><div class="modal-content"><h3 id="modalTitle">Создание задания</h3><div class="form-group"><label>Заголовок задания</label><input type="text" id="taskTitle"></div><div class="form-group"><label>Баллы за задание</label><input type="number" id="taskPoints" value="1" min="0.5" step="0.5"></div><div class="form-group"><label>Текст задания</label><div class="editor-wrapper"><div id="editorjs"></div></div></div><div class="checkbox-group"><input type="checkbox" id="requireFile"><label>Требуется прикрепление файлов</label></div><div class="checkbox-group"><input type="checkbox" id="availableCheckbox" checked><label>Доступно для добавления в тесты</label></div><div class="answers-section"><label>Варианты ответов (отметьте правильные)</label><div id="answersList"></div><button type="button" id="addAnswerBtn" class="add-answer">+ Добавить вариант</button></div><div class="modal-buttons" style="display:flex;justify-content:flex-end;gap:12px;margin-top:1rem;"><button id="cancelTaskBtn" class="btn">Отмена</button><button id="saveTaskBtn" class="btn btn-primary">Сохранить</button></div></div></div>
+<div id="taskModal" class="modal"><div class="modal-content"><h3 id="modalTitle">Создание задания</h3><div class="form-group"><label>Заголовок задания</label><input type="text" id="taskTitle"></div><div class="form-group"><label>Баллы за задание</label><input type="number" id="taskPoints" value="1" min="0.5" step="0.5"></div><div class="form-group"><label>Текст задания</label><div class="editor-wrapper"><div id="editorjs"></div></div></div><div class="checkbox-group"><input type="checkbox" id="requireFile"><label>Требуется прикрепление файлов учеником</label></div><div class="checkbox-group"><input type="checkbox" id="availableCheckbox" checked><label>Доступно для добавления в тесты</label></div>
+    <div class="file-attachments"><label>Дополнительные файлы (ученик сможет скачать)</label><div id="attachmentsList"></div><button type="button" id="addAttachmentBtn" class="add-answer">+ Добавить файл</button></div>
+    <div class="answers-section"><label>Варианты ответов (отметьте правильные)</label><div id="answersList"></div><button type="button" id="addAnswerBtn" class="add-answer">+ Добавить вариант</button></div>
+    <div class="modal-buttons" style="display:flex;justify-content:flex-end;gap:12px;margin-top:1rem;"><button id="cancelTaskBtn" class="btn">Отмена</button><button id="saveTaskBtn" class="btn btn-primary">Сохранить</button></div></div></div>
 <script>
     let tasks=[], currentTaskId=null, editorInstance=null, currentAnswers=[];
+    let currentAttachments = [];
     function showToast(msg, isError=false){const t=document.createElement('div');t.className='toast'+(isError?' error':'');t.textContent=msg;document.body.appendChild(t);setTimeout(()=>t.remove(),3000);}
     async function fetchTasks(){const r=await fetch('/api/tasks-base');return r.json();}
     async function saveTasks(t){await fetch('/api/tasks-base',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(t)});}
+    async function uploadFile(file){
+        const formData = new FormData(); formData.append('file', file);
+        const res = await fetch('/api/upload-file', { method: 'POST', body: formData });
+        if(!res.ok) throw new Error('Ошибка загрузки');
+        const data = await res.json();
+        return { name: data.originalName, url: `/api/uploads/${data.fileName}` };
+    }
     async function load(){tasks=await fetchTasks();renderTasks();}
     function renderTasks(){
         const container=document.getElementById('tasksList');
         if(!tasks.length){container.innerHTML='<p>Нет заданий. Создайте первое.</p>';return;}
-        container.innerHTML=tasks.map((t,idx)=>`<div class="task-item"><div><strong>${escapeHtml(t.title)}</strong><br>Вариантов: ${t.answerOptions?.length||0} | Баллов: ${t.points||1} | ${t.availableInBase!==false?'Доступно':'Скрыто'}</div><div><button class="btn edit-task" data-idx="${idx}">Редактировать</button> <button class="btn delete-task" data-idx="${idx}" style="color:red;">Удалить</button></div></div>`).join('');
+        container.innerHTML=tasks.map((t,idx)=>`<div class="task-item"><div><strong>${escapeHtml(t.title)}</strong><br>Вариантов: ${t.answerOptions?.length||0} | Баллов: ${t.points||1} | ${t.availableInBase!==false?'Доступно':'Скрыто'}${t.attachments?.length ? ` | Файлов: ${t.attachments.length}` : ''}</div><div><button class="btn edit-task" data-idx="${idx}">Редактировать</button> <button class="btn delete-task" data-idx="${idx}" style="color:red;">Удалить</button></div></div>`).join('');
         document.querySelectorAll('.edit-task').forEach(btn=>btn.addEventListener('click',()=>{const idx=parseInt(btn.dataset.idx);openModal(tasks[idx],idx);}));
         document.querySelectorAll('.delete-task').forEach(btn=>btn.addEventListener('click',async()=>{if(confirm('Удалить задание?')){tasks.splice(parseInt(btn.dataset.idx),1);await saveTasks(tasks);load();showToast('Задание удалено');}}));
     }
@@ -57,10 +71,12 @@
         document.getElementById('taskPoints').value=task?.points||1;
         document.getElementById('requireFile').checked=task?(task.requireFileAttachment||false):false;
         document.getElementById('availableCheckbox').checked=task?(task.availableInBase!==false):true;
+        currentAttachments = task?.attachments ? [...task.attachments] : [];
         if(task?.editorData && editorInstance) editorInstance.render(task.editorData);
         else if(editorInstance) editorInstance.clear();
         currentAnswers=task?.answers?[...task.answers]:[];
         renderAnswersUI();
+        renderAttachmentsUI();
         document.getElementById('modalTitle').innerText=task?'Редактирование задания':'Создание задания';
         document.getElementById('taskModal').style.display='flex';
     }
@@ -72,6 +88,27 @@
         document.querySelectorAll('.answer-text').forEach(inp=>inp.addEventListener('input',e=>{const idx=parseInt(inp.dataset.idx);if(currentAnswers[idx])currentAnswers[idx].text=inp.value;}));
         document.querySelectorAll('.remove-answer').forEach(btn=>btn.addEventListener('click',e=>{const idx=parseInt(btn.dataset.idx);currentAnswers.splice(idx,1);renderAnswersUI();}));
     }
+    function renderAttachmentsUI(){
+        const container=document.getElementById('attachmentsList');
+        if(!currentAttachments.length){container.innerHTML='<div style="padding:0.5rem;color:#94a3b8;">Нет дополнительных файлов</div>';return;}
+        container.innerHTML=currentAttachments.map((f,idx)=>`<div class="file-item"><span class="file-name">📎 ${escapeHtml(f.name)}</span><button class="btn-icon remove-attachment" data-idx="${idx}" style="background:none;border:none;cursor:pointer;">🗑️</button></div>`).join('');
+        document.querySelectorAll('.remove-attachment').forEach(btn=>btn.addEventListener('click',e=>{const idx=parseInt(btn.dataset.idx);currentAttachments.splice(idx,1);renderAttachmentsUI();}));
+    }
+    document.getElementById('addAttachmentBtn').addEventListener('click', async () => {
+        const input = document.createElement('input'); input.type='file';
+        input.onchange = async (e) => {
+            const file = e.target.files[0];
+            if(file){
+                try {
+                    const uploaded = await uploadFile(file);
+                    currentAttachments.push(uploaded);
+                    renderAttachmentsUI();
+                    showToast(`Файл "${uploaded.name}" добавлен`);
+                } catch(err) { showToast(err.message, true); }
+            }
+        };
+        input.click();
+    });
     async function initEditor(){
         class CustomImage{
             constructor({data}){this.data=data;this.wrapper=null;}
@@ -115,14 +152,13 @@
         let editorData=editorInstance?await editorInstance.save():{blocks:[]};
         const newTask={
             id:currentTaskId!==null?tasks[currentTaskId].id:Date.now()+'_'+Math.random(),
-            title,
-            points:points,
-            editorData,
+            title, points, editorData,
             answers:currentAnswers.map(a=>({text:a.text,isCorrect:a.isCorrect})),
             answerOptions:currentAnswers.map(a=>a.text),
             correctIndices:currentAnswers.reduce((arr,a,idx)=>{if(a.isCorrect)arr.push(idx);return arr},[]),
             requireFileAttachment:document.getElementById('requireFile').checked,
-            availableInBase:document.getElementById('availableCheckbox').checked
+            availableInBase:document.getElementById('availableCheckbox').checked,
+            attachments: currentAttachments
         };
         if(currentTaskId!==null) tasks[currentTaskId]=newTask;
         else tasks.push(newTask);
@@ -137,8 +173,8 @@
         document.getElementById('taskPoints').value=1;
         document.getElementById('requireFile').checked=false;
         document.getElementById('availableCheckbox').checked=true;
-        currentAnswers=[];
-        renderAnswersUI();
+        currentAnswers=[]; renderAnswersUI();
+        currentAttachments=[]; renderAttachmentsUI();
         if(editorInstance) editorInstance.clear();
         currentTaskId=null;
     }
