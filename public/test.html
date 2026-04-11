@@ -57,7 +57,10 @@
         const tests=await fetchTests();
         const test=tests.find(t=>t.id===testId);
         if(!test) throw new Error('Тест не найден');
-        const shuffledIds=[...test.questions||[]].sort(()=>Math.random()-0.5).map(q=>q.id);
+        let shuffledIds=[...test.questions||[]].sort(()=>Math.random()-0.5).map(q=>q.id);
+        if(test.instruction && test.instruction.blocks && test.instruction.blocks.length){
+            shuffledIds.unshift('__INSTRUCTION__');
+        }
         const endTime=Date.now()+(test.timeLimitMinutes||60)*60*1000;
         const sessionId='sess_'+Date.now()+'_'+Math.random().toString(36).substr(2,8);
         const session={id:sessionId,testId,studentRegNumber:regNumber,studentName,startTime:Date.now(),endTimestamp:endTime,questionsOrder:shuffledIds,currentIndex:0,answers:{}};
@@ -140,7 +143,7 @@
         const app=document.getElementById('appWindow');
         app.innerHTML=`
             <div class="top-bar"><div class="timer-box"><div class="timer-icon">⏱️</div><div class="timer" id="timerDisplay">--:--</div></div><div class="kim-info">${escapeHtml(currentTest.title)}</div><div style="margin-left:auto;display:flex;gap:12px;"><button id="prevBtn" style="background:#E2E8F0;border:none;padding:8px;border-radius:50%;"><svg width="24" height="24" fill="#6d899f" viewBox="0 0 16 16"><path d="M16 14a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2V2a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2zm-4.5-6.5H5.707l2.147-2.146a.5.5 0 1 0-.708-.708l-3 3a.5.5 0 0 0 0 .708l3 3a.5.5 0 0 0 .708-.708L5.707 8.5H11.5a.5.5 0 0 0 0-1"/></svg></button><button id="nextBtn" style="background:#E2E8F0;border:none;padding:8px;border-radius:50%;"><svg width="24" height="24" fill="#6d899f" viewBox="0 0 16 16"><path d="M0 14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V2a2 2 0 0 0-2-2H2a2 2 0 0 0-2 2zm4.5-6.5h5.793L8.146 5.354a.5.5 0 1 1 .708-.708l3 3a.5.5 0 0 1 0 .708l-3 3a.5.5 0 0 1-.708-.708L10.293 8.5H4.5a.5.5 0 0 1 0-1"/></svg></button></div><div class="top-actions"><button class="finish-btn" id="finishBtn">Завершить тестирование</button></div></div>
-            <div class="stats-panel"><span class="stats-label">Дано ответов:</span><span class="stats-count" id="answerCounter">0/${questionsOrder.length}</span><div class="questions-nav" id="questionsNav"><div class="buttons-wrapper" id="buttonsContainer"></div></div><div style="position:absolute;right:90px;top:-12px;"><button id="zoomInBtn" style="background:none;border:none;"><svg width="36" height="36" fill="currentColor" viewBox="0 0 16 16"><path fill-rule="evenodd" d="M6.5 12a5.5 5.5 0 1 0 0-11 5.5 5.5 0 0 0 0 11M13 6.5a6.5 6.5 0 1 1-13 0 6.5 6.5 0 0 1 13 0"/><path d="M10.344 11.742q.044.06.098.115l3.85 3.85a1 1 0 0 0 1.415-1.414l-3.85-3.85a1 1 0 0 0-.115-.1 6.5 6.5 0 0 1-1.398 1.4z"/><path fill-rule="evenodd" d="M6.5 3a.5.5 0 0 1 .5.5V6h2.5a.5.5 0 0 1 0 1H7v2.5a.5.5 0 0 1-1 0V7H3.5a.5.5 0 0 1 0-1H6V3.5a.5.5 0 0 1 .5-.5"/></svg></button><button id="zoomOutBtn" style="background:none;border:none;"><svg width="36" height="36" fill="currentColor" viewBox="0 0 16 16"><path fill-rule="evenodd" d="M6.5 12a5.5 5.5 0 1 0 0-11 5.5 5.5 0 0 0 0 11M13 6.5a6.5 6.5 0 1 1-13 0 6.5 6.5 0 0 1 13 0"/><path d="M10.344 11.742q.044.06.098.115l3.85 3.85a1 1 0 0 0 1.415-1.414l-3.85-3.85a1 1 0 0 0-.115-.1 6.5 6.5 0 0 1-1.398 1.4z"/><path fill-rule="evenodd" d="M3 6.5a.5.5 0 0 1 .5-.5h6a.5.5 0 0 1 0 1h-6a.5.5 0 0 1-.5-.5"/></svg></button></div></div>
+            <div class="stats-panel"><span class="stats-label">Дано ответов:</span><span class="stats-count" id="answerCounter">0/${questionsOrder.filter(q=>q!=='__INSTRUCTION__').length}</span><div class="questions-nav" id="questionsNav"><div class="buttons-wrapper" id="buttonsContainer"></div></div><div style="position:absolute;right:90px;top:-12px;"><button id="zoomInBtn" style="background:none;border:none;"><svg width="36" height="36" fill="currentColor" viewBox="0 0 16 16"><path fill-rule="evenodd" d="M6.5 12a5.5 5.5 0 1 0 0-11 5.5 5.5 0 0 0 0 11M13 6.5a6.5 6.5 0 1 1-13 0 6.5 6.5 0 0 1 13 0"/><path d="M10.344 11.742q.044.06.098.115l3.85 3.85a1 1 0 0 0 1.415-1.414l-3.85-3.85a1 1 0 0 0-.115-.1 6.5 6.5 0 0 1-1.398 1.4z"/><path fill-rule="evenodd" d="M6.5 3a.5.5 0 0 1 .5.5V6h2.5a.5.5 0 0 1 0 1H7v2.5a.5.5 0 0 1-1 0V7H3.5a.5.5 0 0 1 0-1H6V3.5a.5.5 0 0 1 .5-.5"/></svg></button><button id="zoomOutBtn" style="background:none;border:none;"><svg width="36" height="36" fill="currentColor" viewBox="0 0 16 16"><path fill-rule="evenodd" d="M6.5 12a5.5 5.5 0 1 0 0-11 5.5 5.5 0 0 0 0 11M13 6.5a6.5 6.5 0 1 1-13 0 6.5 6.5 0 0 1 13 0"/><path d="M10.344 11.742q.044.06.098.115l3.85 3.85a1 1 0 0 0 1.415-1.414l-3.85-3.85a1 1 0 0 0-.115-.1 6.5 6.5 0 0 1-1.398 1.4z"/><path fill-rule="evenodd" d="M3 6.5a.5.5 0 0 1 .5-.5h6a.5.5 0 0 1 0 1h-6a.5.5 0 0 1-.5-.5"/></svg></button></div></div>
             <div class="content-area"><div id="questionContent" class="question-html"></div></div>
             <div class="file-bar" id="fileBar"></div>
             <div class="answer-area"><textarea id="answerInput" class="answer-textbox" placeholder="Введите ответ..."></textarea></div>
@@ -155,6 +158,7 @@
     }
     async function saveCurrentAnswer(){
         const qid=questionsOrder[currentIndex];
+        if(qid === '__INSTRUCTION__') return;
         const text=document.getElementById('answerInput').value;
         if(!sessionAnswers[qid]) sessionAnswers[qid]={text:'',files:[]};
         sessionAnswers[qid].text=text;
@@ -164,22 +168,52 @@
     }
     async function renderCurrentQuestion(){
         const qid=questionsOrder[currentIndex];
-        const q=currentTest.questions.find(qq=>qq.id===qid);
-        if(!q) return;
-        let html='';
-        if(q.editorData?.blocks){
-            for(let b of q.editorData.blocks){
-                if(b.type==='paragraph') html+=`<p>${b.data.text}</p>`;
-                else if(b.type==='header') html+=`<h${b.data.level}>${b.data.text}</h${b.data.level}>`;
-                else if(b.type==='list'){const tag=b.data.style==='ordered'?'ol':'ul';html+=`<${tag}>`;for(let i of b.data.items)html+=`<li>${i}</li>`;html+=`</${tag}>`;}
-                else if(b.type==='image') html+=`<img src="${b.data.file.url}" alt="${b.data.caption||''}">`;
-                else html+=`<div>${JSON.stringify(b.data)}</div>`;
+        if(qid === '__INSTRUCTION__'){
+            const instruction = currentTest.instruction;
+            let html = '<div class="instruction-block" style="font-size:1.1rem;"><h2 style="margin-bottom:1rem;">Инструкция к тесту</h2>';
+            if(instruction && instruction.blocks){
+                for(let b of instruction.blocks){
+                    if(b.type==='paragraph') html+=`<p style="margin-bottom:0.5rem;">${b.data.text}</p>`;
+                    else if(b.type==='header') html+=`<h${b.data.level}>${b.data.text}</h${b.data.level}>`;
+                    else if(b.type==='list'){const tag=b.data.style==='ordered'?'ol':'ul';html+=`<${tag}>`;for(let i of b.data.items)html+=`<li>${i}</li>`;html+=`</${tag}>`;}
+                    else if(b.type==='image') html+=`<img src="${b.data.file.url}" alt="${b.data.caption||''}" style="max-width:100%;">`;
+                    else html+=`<div>${JSON.stringify(b.data)}</div>`;
+                }
+            } else {
+                html += '<p>Инструкция не заполнена.</p>';
             }
-        } else html='<p>Нет содержимого</p>';
-        document.getElementById('questionContent').innerHTML=html;
-        const ans=sessionAnswers[qid]||{text:'',files:[]};
-        document.getElementById('answerInput').value=ans.text;
-        renderFileBar(q);
+            html += '</div>';
+            document.getElementById('questionContent').innerHTML = html;
+            document.getElementById('answerInput').style.display = 'none';
+            document.getElementById('fileBar').style.display = 'none';
+            return;
+        } else {
+            document.getElementById('answerInput').style.display = 'block';
+            document.getElementById('fileBar').style.display = 'flex';
+            const q=currentTest.questions.find(qq=>qq.id===qid);
+            if(!q) return;
+            let html='';
+            if(q.editorData?.blocks){
+                for(let b of q.editorData.blocks){
+                    if(b.type==='paragraph') html+=`<p>${b.data.text}</p>`;
+                    else if(b.type==='header') html+=`<h${b.data.level}>${b.data.text}</h${b.data.level}>`;
+                    else if(b.type==='list'){const tag=b.data.style==='ordered'?'ol':'ul';html+=`<${tag}>`;for(let i of b.data.items)html+=`<li>${i}</li>`;html+=`</${tag}>`;}
+                    else if(b.type==='image') html+=`<img src="${b.data.file.url}" alt="${b.data.caption||''}">`;
+                    else html+=`<div>${JSON.stringify(b.data)}</div>`;
+                }
+            } else html='<p>Нет содержимого</p>';
+            if(q.attachments && q.attachments.length){
+                html+=`<div class="question-attachments" style="margin-top:1rem;"><strong>Дополнительные материалы:</strong><br>`;
+                for(let f of q.attachments){
+                    html+=`<a href="${f.url}" download="${f.name}" target="_blank" class="file-link" style="display:inline-block;margin:4px 8px 4px 0;">📎 ${escapeHtml(f.name)}</a> `;
+                }
+                html+=`</div>`;
+            }
+            document.getElementById('questionContent').innerHTML=html;
+            const ans=sessionAnswers[qid]||{text:'',files:[]};
+            document.getElementById('answerInput').value=ans.text;
+            renderFileBar(q);
+        }
     }
     async function renderFileBar(q){
         const bar=document.getElementById('fileBar');
@@ -222,16 +256,23 @@
         let html='';
         for(let i=0;i<questionsOrder.length;i++){
             const qid=questionsOrder[i];
-            const answered=sessionAnswers[qid] && (sessionAnswers[qid].text.trim()!=='' || (sessionAnswers[qid].files?.length));
-            html+=`<button class="q-btn ${i===currentIndex?'current':''} ${answered?'answered':''}" data-idx="${i}">${i+1}</button>`;
+            let label = (qid === '__INSTRUCTION__') ? 'Инструкция' : (i+1).toString();
+            let answered = false;
+            if(qid !== '__INSTRUCTION__'){
+                answered = sessionAnswers[qid] && (sessionAnswers[qid].text.trim()!=='' || (sessionAnswers[qid].files?.length));
+            }
+            html+=`<button class="q-btn ${i===currentIndex?'current':''} ${answered?'answered':''}" data-idx="${i}">${label}</button>`;
         }
         container.innerHTML=html;
         document.querySelectorAll('.q-btn').forEach(btn=>btn.onclick=()=>{saveCurrentAnswer();currentIndex=parseInt(btn.dataset.idx);renderCurrentQuestion();renderNav();updateCounter();});
     }
     function updateCounter(){
         let cnt=0;
-        for(let qid of questionsOrder) if(sessionAnswers[qid] && (sessionAnswers[qid].text.trim()!=='' || sessionAnswers[qid].files?.length)) cnt++;
-        document.getElementById('answerCounter').innerText=`${cnt}/${questionsOrder.length}`;
+        for(let qid of questionsOrder){
+            if(qid === '__INSTRUCTION__') continue;
+            if(sessionAnswers[qid] && (sessionAnswers[qid].text.trim()!=='' || sessionAnswers[qid].files?.length)) cnt++;
+        }
+        document.getElementById('answerCounter').innerText=`${cnt}/${questionsOrder.filter(q=>q!=='__INSTRUCTION__').length}`;
     }
     function changeQuestion(delta){
         saveCurrentAnswer();
@@ -261,6 +302,7 @@
         await saveCurrentAnswer();
         const answersArray=[];
         for(let qid of questionsOrder){
+            if(qid === '__INSTRUCTION__') continue;
             const ans=sessionAnswers[qid]||{text:'',files:[]};
             answersArray.push({questionId:qid,answerText:ans.text,files:ans.files});
         }
