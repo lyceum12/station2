@@ -59,7 +59,6 @@
         if(!test) throw new Error('Тест не найден');
         const student = (test.students || []).find(s => s.registrationNumber === studentCode && s.testLogin === testLogin);
         if(!student) throw new Error('Неверный логин или код участника');
-        // Проверка лимита попыток
         const attemptsLimit = test.attemptsLimit !== undefined ? test.attemptsLimit : 0;
         if(attemptsLimit > 0){
             const results = test.results || [];
@@ -107,17 +106,14 @@
                 const tests=await fetchTests();
                 currentTest=tests.find(t=>t.id===session.testId);
                 if(!currentTest){localStorage.removeItem('quiz_session_id');showLogin();return;}
-                // Обновляем порядок вопросов (учитель мог изменить)
+                // Обновляем порядок вопросов и время
                 const newOrder = [...(currentTest.questions || [])].sort(() => Math.random() - 0.5).map(q => q.id);
                 if(currentTest.instruction && currentTest.instruction.blocks && currentTest.instruction.blocks.length) newOrder.unshift('__INSTRUCTION__');
-                // Проверяем, не изменилось ли время теста
-                const oldEnd = session.endTimestamp;
                 const oldStart = session.startTime;
                 const elapsed = Date.now() - oldStart;
                 const newTotalMs = (currentTest.timeLimitMinutes || 60) * 60 * 1000;
                 let newEndTime;
                 if(elapsed >= newTotalMs){
-                    // Время истекло – завершаем тест
                     await finishSession();
                     showToast('Время теста истекло', true);
                     location.reload();
@@ -125,10 +121,8 @@
                 } else {
                     newEndTime = oldStart + newTotalMs;
                 }
-                // Обновляем сессию
                 session.endTimestamp = newEndTime;
                 session.questionsOrder = newOrder;
-                // Также обновляем вопросы в sessionAnswers (удаляем те, которых больше нет)
                 const newAnswers = {};
                 for(let qid of newOrder){
                     if(qid !== '__INSTRUCTION__' && sessionAnswers[qid]) newAnswers[qid] = sessionAnswers[qid];
@@ -136,7 +130,6 @@
                 sessionAnswers = newAnswers;
                 session.answers = newAnswers;
                 await updateSession(null, session.currentIndex);
-                // Перезаписываем сессию
                 let sessions = await getSessions();
                 const idx = sessions.findIndex(s => s.id === currentSessionId);
                 if(idx !== -1){
