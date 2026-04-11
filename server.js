@@ -137,57 +137,65 @@ app.post('/api/tasks-base', isAuthenticated, (req, res) => { writeJSON(tasksBase
 app.get('/api/sessions', isAuthenticated, (req, res) => res.json(readJSON(sessionsFile)));
 app.post('/api/sessions', isAuthenticated, (req, res) => { writeJSON(sessionsFile, req.body); res.json({ success: true }); });
 
-// ========== Экспорт/импорт ZIP (все данные + файлы) ==========
+// ========== Экспорт/импорт ZIP ==========
 app.get('/api/export-all', isAuthenticated, (req, res) => {
     const archive = archiver('zip', { zlib: { level: 9 } });
     res.attachment('test_constructor_backup.zip');
     archive.pipe(res);
-    // Добавляем JSON-файлы
-    archive.append(fs.readFileSync(usersFile), { name: 'data/users.json' });
-    archive.append(fs.readFileSync(logsFile), { name: 'data/logs.json' });
-    archive.append(fs.readFileSync(testsFile), { name: 'data/tests.json' });
-    archive.append(fs.readFileSync(tasksBaseFile), { name: 'data/tasks_base.json' });
-    archive.append(fs.readFileSync(sessionsFile), { name: 'data/sessions.json' });
-    archive.append(fs.readFileSync(usersDataFile), { name: 'data/users_data.json' });
-    // Добавляем папку uploads
+    archive.file(usersFile, { name: 'data/users.json' });
+    archive.file(logsFile, { name: 'data/logs.json' });
+    archive.file(testsFile, { name: 'data/tests.json' });
+    archive.file(tasksBaseFile, { name: 'data/tasks_base.json' });
+    archive.file(sessionsFile, { name: 'data/sessions.json' });
+    archive.file(usersDataFile, { name: 'data/users_data.json' });
     archive.directory(uploadsDir, 'uploads');
-    archive.finalize();
+    archive.finalize().catch(err => { console.error(err); res.status(500).json({ error: 'Ошибка создания архива' }); });
 });
 const multerZip = multer({ storage: multer.memoryStorage() });
 app.post('/api/import-all', isAuthenticated, multerZip.single('zip'), async (req, res) => {
     if (!req.file) return res.status(400).json({ error: 'Файл не загружен' });
-    const zipBuffer = req.file.buffer;
     const JSZip = require('jszip');
-    const zip = await JSZip.loadAsync(zipBuffer);
-    // Восстанавливаем JSON-файлы
-    const dataFolder = zip.folder('data');
-    if (dataFolder) {
-        const users = await dataFolder.file('users.json')?.async('string');
-        if (users) fs.writeFileSync(usersFile, users);
-        const logs = await dataFolder.file('logs.json')?.async('string');
-        if (logs) fs.writeFileSync(logsFile, logs);
-        const tests = await dataFolder.file('tests.json')?.async('string');
-        if (tests) fs.writeFileSync(testsFile, tests);
-        const tasks = await dataFolder.file('tasks_base.json')?.async('string');
-        if (tasks) fs.writeFileSync(tasksBaseFile, tasks);
-        const sessions = await dataFolder.file('sessions.json')?.async('string');
-        if (sessions) fs.writeFileSync(sessionsFile, sessions);
-        const usersData = await dataFolder.file('users_data.json')?.async('string');
-        if (usersData) fs.writeFileSync(usersDataFile, usersData);
-    }
-    // Восстанавливаем uploads
-    const uploadsFolder = zip.folder('uploads');
-    if (uploadsFolder) {
-        const files = Object.values(uploadsFolder.files);
-        for (const file of files) {
-            if (!file.dir) {
-                const content = await file.async('nodebuffer');
-                fs.writeFileSync(path.join(uploadsDir, file.name), content);
+    try {
+        const zip = await JSZip.loadAsync(req.file.buffer);
+        // Восстановление JSON-файлов
+        const dataFolder = zip.folder('data');
+        if (dataFolder) {
+            const users = await dataFolder.file('users.json')?.async('string');
+            if (users) fs.writeFileSync(usersFile, users);
+            const logs = await dataFolder.file('logs.json')?.async('string');
+            if (logs) fs.writeFileSync(logsFile, logs);
+            const tests = await dataFolder.file('tests.json')?.async('string');
+            if (tests) fs.writeFileSync(testsFile, tests);
+            const tasks = await dataFolder.file('tasks_base.json')?.async('string');
+            if (tasks) fs.writeFileSync(tasksBaseFile, tasks);
+            const sessions = await dataFolder.file('sessions.json')?.async('string');
+            if (sessions) fs.writeFileSync(sessionsFile, sessions);
+            const usersData = await dataFolder.file('users_data.json')?.async('string');
+            if (usersData) fs.writeFileSync(usersDataFile, usersData);
+        }
+        const uploadsFolder = zip.folder('uploads');
+        if (uploadsFolder) {
+            // Очищаем папку uploads перед распаковкой
+            if (fs.existsSync(uploadsDir)) {
+                fs.readdirSync(uploadsDir).forEach(file => {
+                    const filePath = path.join(uploadsDir, file);
+                    if (fs.lstatSync(filePath).isFile()) fs.unlinkSync(filePath);
+                });
+            }
+            const files = Object.values(uploadsFolder.files);
+            for (const file of files) {
+                if (!file.dir) {
+                    const content = await file.async('nodebuffer');
+                    fs.writeFileSync(path.join(uploadsDir, file.name), content);
+                }
             }
         }
+        addLog(req.session.user.username, 'Импорт всех данных (ZIP)', req);
+        res.json({ success: true });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: 'Ошибка при импорте: ' + err.message });
     }
-    addLog(req.session.user.username, 'Импорт всех данных (ZIP)', req);
-    res.json({ success: true });
 });
 
 // ========== Сессии учеников ==========
@@ -198,20 +206,14 @@ app.post('/api/start-session', (req, res) => {
     if (!test) return res.status(404).json({ error: 'Тест не найден' });
     const student = (test.students || []).find(s => s.registrationNumber === studentRegNumber);
     if (!student) return res.status(403).json({ error: 'Код участника не найден' });
-    // Проверка лимита попыток (по завершённым результатам)
     const attemptsLimit = test.attemptsLimit !== undefined ? test.attemptsLimit : 0;
     if (attemptsLimit > 0) {
         const results = test.results || [];
         const attemptsCount = results.filter(r => r.studentRegNumber === studentRegNumber).length;
-        if (attemptsCount >= attemptsLimit) {
-            return res.status(403).json({ error: `Превышен лимит попыток (${attemptsLimit})` });
-        }
+        if (attemptsCount >= attemptsLimit) return res.status(403).json({ error: `Превышен лимит попыток (${attemptsLimit})` });
     }
-    // Формируем порядок вопросов (инструкция – первая)
     const shuffledIds = [...(test.questions || [])].sort(() => Math.random() - 0.5).map(q => q.id);
-    if (test.instruction && test.instruction.blocks && test.instruction.blocks.length) {
-        shuffledIds.unshift('__INSTRUCTION__');
-    }
+    if (test.instruction && test.instruction.blocks && test.instruction.blocks.length) shuffledIds.unshift('__INSTRUCTION__');
     const endTime = Date.now() + (test.timeLimitMinutes || 60) * 60 * 1000;
     const sessionId = uuidv4();
     const sessions = readJSON(sessionsFile);
