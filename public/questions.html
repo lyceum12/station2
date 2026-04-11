@@ -34,9 +34,9 @@
         .modal-content input{width:100%;padding:0.8rem;margin:1rem 0;border:1px solid #cbd5e1;border-radius:40px;}
         .task-item{border:1px solid #e2e8f0;border-radius:16px;padding:0.8rem;margin-bottom:0.8rem;cursor:pointer;}
         .task-item:hover{background:#f8fafc;}
-        .toast-message{position:fixed;bottom:20px;right:20px;color:white;padding:12px 20px;border-radius:40px;z-index:1000;}
-        .file-upload-label{background:#e2e8f0;padding:0.6rem 1.4rem;border-radius:40px;cursor:pointer;display:inline-flex;align-items:center;gap:8px;}
-        .file-upload-label:hover{background:#cbd5e1;}
+        .toast{position:fixed;bottom:20px;right:20px;background:#10b981;color:white;padding:12px 20px;border-radius:40px;z-index:1000;animation:fadein 0.3s;}
+        .toast.error{background:#ef4444;}
+        @keyframes fadein{from{opacity:0;transform:translateX(100%);}to{opacity:1;transform:translateX(0);}}
     </style>
 </head>
 <body>
@@ -44,12 +44,7 @@
     <a href="index.html" class="back-link">← На главную</a>
     <div class="header-info">
         <div><div id="testTitleContainer"></div><div class="test-badge" id="testIdBadge"></div></div>
-        <div>
-            <button class="btn btn-outline" id="manageTestBtn">Управление тестом</button>
-            <button class="btn btn-outline" id="addFromBaseBtn">Добавить из базы</button>
-            <label class="file-upload-label" id="uploadHtmlBtn">📄 Загрузить HTML<input type="file" id="htmlFileInput" accept=".html, .htm" style="display:none;"></label>
-            <button class="btn btn-primary" id="createNewQuestionBtn">Создать вопрос</button>
-        </div>
+        <div><button class="btn btn-outline" id="manageTestBtn">Управление тестом</button><button class="btn btn-outline" id="addFromBaseBtn">Добавить из базы</button><button class="btn btn-primary" id="createNewQuestionBtn">Создать вопрос</button></div>
     </div>
     <div id="questionsListContainer" class="questions-grid"></div>
     <footer>Перетаскивайте вопросы для изменения порядка. Нажмите на номер вопроса, чтобы изменить его позицию.</footer>
@@ -59,12 +54,7 @@
 <script>
     let currentTestId=null, currentTest=null, isEditingTitle=false;
     let movingQuestionId = null;
-    async function checkAuth() {
-        const res = await fetch('/api/check-session');
-        const data = await res.json();
-        if (!data.authenticated) { window.location.href = 'index.html'; return false; }
-        return true;
-    }
+    function showToast(msg, isError=false){const t=document.createElement('div');t.className='toast'+(isError?' error':'');t.textContent=msg;document.body.appendChild(t);setTimeout(()=>t.remove(),3000);}
     async function fetchTests(){const r=await fetch('/api/tests');return r.json();}
     async function saveTests(t){await fetch('/api/tests',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(t)});}
     async function loadTestFromUrl(){
@@ -142,7 +132,6 @@
         renderQuestionsList();
         showToast(`Вопрос перемещён на позицию ${newPosition}`);
     }
-    function showToast(msg,isError=false){const t=document.createElement('div');t.className='toast-message';t.style.background=isError?'#ef4444':'#10b981';t.textContent=msg;document.body.appendChild(t);setTimeout(()=>t.remove(),3000);}
     function escapeHtml(s){if(!s)return '';return s.replace(/[&<>]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[m]));}
     document.getElementById('createNewQuestionBtn').addEventListener('click',()=>{if(currentTestId)location.href=`edit-question.html?testId=${currentTestId}&mode=new`;});
     document.getElementById('manageTestBtn').addEventListener('click',()=>{if(currentTestId)location.href=`manage-test.html?testId=${currentTestId}`;});
@@ -180,7 +169,7 @@
         numberModal.style.display = 'none';
         movingQuestionId = null;
     });
-    checkAuth().then(ok => { if(ok) loadTestFromUrl(); });
+    loadTestFromUrl();
 </script>
 </body>
 </html>
