@@ -158,7 +158,7 @@ app.post('/api/import-data', isAuthenticated, (req, res) => {
     res.json({ success: true });
 });
 
-// Сессии учеников (без авторизации)
+// Сессии учеников (без авторизации) с проверкой лимита попыток
 app.post('/api/start-session', (req, res) => {
     const { testId, studentRegNumber, studentName } = req.body;
     const tests = readJSON(testsFile);
@@ -166,7 +166,22 @@ app.post('/api/start-session', (req, res) => {
     if (!test) return res.status(404).json({ error: 'Тест не найден' });
     const student = (test.students || []).find(s => s.registrationNumber === studentRegNumber);
     if (!student) return res.status(403).json({ error: 'Код участника не найден' });
+    
+    // Проверка лимита попыток
+    const attemptsLimit = test.attemptsLimit !== undefined ? test.attemptsLimit : 0;
+    if (attemptsLimit > 0) {
+        const results = test.results || [];
+        const attemptsCount = results.filter(r => r.studentRegNumber === studentRegNumber).length;
+        if (attemptsCount >= attemptsLimit) {
+            return res.status(403).json({ error: `Превышен лимит попыток (${attemptsLimit})` });
+        }
+    }
+    
     const shuffledIds = [...(test.questions || [])].sort(() => Math.random() - 0.5).map(q => q.id);
+    // Добавляем инструкцию в начало, если она есть
+    if(test.instruction && test.instruction.blocks && test.instruction.blocks.length){
+        shuffledIds.unshift('__INSTRUCTION__');
+    }
     const endTime = Date.now() + (test.timeLimitMinutes || 60) * 60 * 1000;
     const sessionId = uuidv4();
     const sessions = readJSON(sessionsFile);
@@ -177,12 +192,14 @@ app.post('/api/start-session', (req, res) => {
     writeJSON(sessionsFile, sessions);
     res.json({ sessionId, endTimestamp: endTime, questionsOrder: shuffledIds });
 });
+
 app.get('/api/session/:sessionId', (req, res) => {
     const sessions = readJSON(sessionsFile);
     const session = sessions.find(s => s.id === req.params.sessionId);
     if (!session) return res.status(404).json({ error: 'Сессия не найдена' });
     res.json(session);
 });
+
 app.post('/api/session/:sessionId', (req, res) => {
     const { answers, currentIndex } = req.body;
     const sessions = readJSON(sessionsFile);
@@ -193,6 +210,7 @@ app.post('/api/session/:sessionId', (req, res) => {
     writeJSON(sessionsFile, sessions);
     res.json({ success: true });
 });
+
 app.post('/api/finish-session/:sessionId', (req, res) => {
     const sessions = readJSON(sessionsFile);
     const idx = sessions.findIndex(s => s.id === req.params.sessionId);
