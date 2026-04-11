@@ -44,14 +44,23 @@
         <div class="form-group"><label>Баллы за вопрос</label><input type="number" id="questionPoints" value="1" min="0.5" step="0.5"></div>
         <div class="form-group"><label>Текст вопроса (можно вставить изображения)</label><div class="editor-wrapper"><div id="editorjs"></div></div><div class="info-tip">Для вставки изображения нажмите на плюс и выберите "Изображение"</div></div>
         <div class="checkbox-group"><input type="checkbox" id="requireFileAttachment"><label>Требуется прикрепление файлов учеником</label></div>
-        <div class="file-attachments"><label>Дополнительные файлы (ученик сможет скачать)</label><div id="attachmentsList"></div><button type="button" id="addAttachmentBtn" class="add-answer">+ Добавить файл</button><div class="info-tip">Файлы будут доступны ученику при ответе на вопрос</div></div>
+        
+        <!-- Блок дополнительных файлов для вопроса -->
+        <div class="file-attachments">
+            <label>Дополнительные файлы (ученик сможет скачать)</label>
+            <div id="attachmentsList"></div>
+            <button type="button" id="addAttachmentBtn" class="add-answer">+ Добавить файл</button>
+            <div class="info-tip">Файлы будут доступны ученику при ответе на вопрос</div>
+        </div>
+        
         <div class="answers-section"><label>Варианты ответов (отметьте правильные)</label><div id="answersList"></div><button type="button" id="addAnswerBtn" class="add-answer">+ Добавить вариант ответа</button></div>
         <div class="action-buttons"><button type="button" id="cancelBtn" class="btn-cancel">Отмена</button><button type="button" id="saveQuestionBtn" class="btn-save">Сохранить вопрос</button></div>
     </div>
 </div>
+
 <script>
     let editorInstance=null, currentTestId=null, currentQuestionId=null, currentAnswers=[];
-    let currentAttachments = [];
+    let currentAttachments = []; // { name, url }
     function showToast(msg, isError=false){const t=document.createElement('div');t.className='toast'+(isError?' error':'');t.textContent=msg;document.body.appendChild(t);setTimeout(()=>t.remove(),3000);}
     async function fetchTests(){const r=await fetch('/api/tests');return r.json();}
     async function saveTests(t){await fetch('/api/tests',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(t)});}
