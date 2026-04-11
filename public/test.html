@@ -52,21 +52,28 @@
     async function fetchTests(){const r=await fetch('/api/tests');return r.json();}
     async function getSessions(){const r=await fetch('/api/sessions');return r.json();}
     async function saveSessions(s){await fetch('/api/sessions',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(s)});}
-    async function startSession(testId, regNumber, studentName){
+    async function startSession(testId, testLogin, studentCode, studentName){
         let sessions=await getSessions();
         const tests=await fetchTests();
         const test=tests.find(t=>t.id===testId);
         if(!test) throw new Error('Тест не найден');
-        const shuffledIds=[...test.questions||[]].sort(()=>Math.random()-0.5).map(q=>q.id);
-        if(test.instruction && test.instruction.blocks && test.instruction.blocks.length){
-            shuffledIds.unshift('__INSTRUCTION__');
+        const student = (test.students || []).find(s => s.registrationNumber === studentCode && s.testLogin === testLogin);
+        if(!student) throw new Error('Неверный логин или код участника');
+        // Проверка лимита попыток
+        const attemptsLimit = test.attemptsLimit !== undefined ? test.attemptsLimit : 0;
+        if(attemptsLimit > 0){
+            const results = test.results || [];
+            const attemptsCount = results.filter(r => r.studentRegNumber === studentCode).length;
+            if(attemptsCount >= attemptsLimit) throw new Error(`Превышен лимит попыток (${attemptsLimit})`);
         }
-        const endTime=Date.now()+(test.timeLimitMinutes||60)*60*1000;
-        const sessionId='sess_'+Date.now()+'_'+Math.random().toString(36).substr(2,8);
-        const session={id:sessionId,testId,studentRegNumber:regNumber,studentName,startTime:Date.now(),endTimestamp:endTime,questionsOrder:shuffledIds,currentIndex:0,answers:{}};
+        const shuffledIds = [...(test.questions || [])].sort(() => Math.random() - 0.5).map(q => q.id);
+        if(test.instruction && test.instruction.blocks && test.instruction.blocks.length) shuffledIds.unshift('__INSTRUCTION__');
+        const endTime = Date.now() + (test.timeLimitMinutes || 60) * 60 * 1000;
+        const sessionId = 'sess_'+Date.now()+'_'+Math.random().toString(36).substr(2,8);
+        const session = { id:sessionId, testId, studentRegNumber:studentCode, studentName:student.fullName, startTime:Date.now(), endTimestamp:endTime, questionsOrder:shuffledIds, currentIndex:0, answers:{} };
         sessions.push(session);
         await saveSessions(sessions);
-        return {sessionId,endTimestamp:endTime,questionsOrder:shuffledIds};
+        return { sessionId, endTimestamp:endTime, questionsOrder:shuffledIds };
     }
     async function loadSession(){
         const sid=localStorage.getItem('quiz_session_id');
@@ -100,29 +107,78 @@
                 const tests=await fetchTests();
                 currentTest=tests.find(t=>t.id===session.testId);
                 if(!currentTest){localStorage.removeItem('quiz_session_id');showLogin();return;}
-                questionsOrder=session.questionsOrder;
-                currentIndex=session.currentIndex;
-                currentSessionId=session.id;
-                sessionAnswers=session.answers||{};
+                // Обновляем порядок вопросов (учитель мог изменить)
+                const newOrder = [...(currentTest.questions || [])].sort(() => Math.random() - 0.5).map(q => q.id);
+                if(currentTest.instruction && currentTest.instruction.blocks && currentTest.instruction.blocks.length) newOrder.unshift('__INSTRUCTION__');
+                // Проверяем, не изменилось ли время теста
+                const oldEnd = session.endTimestamp;
+                const oldStart = session.startTime;
+                const elapsed = Date.now() - oldStart;
+                const newTotalMs = (currentTest.timeLimitMinutes || 60) * 60 * 1000;
+                let newEndTime;
+                if(elapsed >= newTotalMs){
+                    // Время истекло – завершаем тест
+                    await finishSession();
+                    showToast('Время теста истекло', true);
+                    location.reload();
+                    return;
+                } else {
+                    newEndTime = oldStart + newTotalMs;
+                }
+                // Обновляем сессию
+                session.endTimestamp = newEndTime;
+                session.questionsOrder = newOrder;
+                // Также обновляем вопросы в sessionAnswers (удаляем те, которых больше нет)
+                const newAnswers = {};
+                for(let qid of newOrder){
+                    if(qid !== '__INSTRUCTION__' && sessionAnswers[qid]) newAnswers[qid] = sessionAnswers[qid];
+                }
+                sessionAnswers = newAnswers;
+                session.answers = newAnswers;
+                await updateSession(null, session.currentIndex);
+                // Перезаписываем сессию
+                let sessions = await getSessions();
+                const idx = sessions.findIndex(s => s.id === currentSessionId);
+                if(idx !== -1){
+                    sessions[idx] = session;
+                    await saveSessions(sessions);
+                }
+                questionsOrder = newOrder;
+                currentIndex = session.currentIndex;
+                currentSessionId = session.id;
                 buildUI();
-                startTimer(session.endTimestamp);
+                startTimer(newEndTime);
                 await renderCurrentQuestion();
                 renderNav();
                 updateCounter();
-            }else showLogin();
-        }catch(e){console.error(e);showLogin();}
+            } else showLogin();
+        } catch(e){console.error(e);showLogin();}
     }
     function showLogin(){
-        document.getElementById('appWindow').innerHTML=`<div class="login-overlay"><div class="login-card"><h2>Вход в тестирование</h2><p>Введите код участника</p><input type="text" id="regCode" placeholder="Код участника"><button id="loginBtn" style="background:#1E325A;color:white;padding:0.6rem 2rem;border:none;border-radius:40px;">Войти</button><div id="loginError" class="error-msg"></div></div></div>`;
+        document.getElementById('appWindow').innerHTML=`
+            <div class="login-overlay" id="loginOverlay">
+                <div class="login-card">
+                    <h2>Вход в тестирование</h2>
+                    <input type="text" id="testLogin" placeholder="Логин (номер теста)">
+                    <input type="text" id="studentCode" placeholder="Код участника">
+                    <button id="loginBtn" style="background:#1E325A;color:white;padding:0.6rem 2rem;border:none;border-radius:40px;">Войти</button>
+                    <div id="loginError" class="error-msg"></div>
+                </div>
+            </div>
+        `;
         document.getElementById('loginBtn').onclick=async()=>{
-            const code=document.getElementById('regCode').value.trim();
-            if(!code){document.getElementById('loginError').innerText='Введите код';return;}
+            const login = document.getElementById('testLogin').value.trim();
+            const code = document.getElementById('studentCode').value.trim();
+            if(!login || !code){document.getElementById('loginError').innerText='Заполните оба поля';return;}
             const tests=await fetchTests();
             let foundTest=null, foundStudent=null;
-            for(let t of tests){const s=(t.students||[]).find(st=>st.registrationNumber===code);if(s){foundTest=t;foundStudent=s;break;}}
-            if(!foundTest){document.getElementById('loginError').innerText='Код не найден';return;}
+            for(let t of tests){
+                const s=(t.students||[]).find(st=>st.testLogin===login && st.registrationNumber===code);
+                if(s){foundTest=t;foundStudent=s;break;}
+            }
+            if(!foundTest){document.getElementById('loginError').innerText='Неверный логин или код участника';return;}
             try{
-                const data=await startSession(foundTest.id,code,foundStudent.fullName);
+                const data=await startSession(foundTest.id, login, code, foundStudent.fullName);
                 currentTest=foundTest;
                 questionsOrder=data.questionsOrder;
                 currentIndex=0;
@@ -136,13 +192,7 @@
                 await renderCurrentQuestion();
                 renderNav();
                 updateCounter();
-            }catch(e){
-                if(e.message.includes('лимит попыток') || e.message.includes('attempts')){
-                    document.getElementById('loginError').innerHTML = '❌ Вы исчерпали лимит попыток прохождения этого теста.';
-                } else {
-                    document.getElementById('loginError').innerText = e.message;
-                }
-            }
+            } catch(e){document.getElementById('loginError').innerText=e.message;}
         };
     }
     function buildUI(){
@@ -176,7 +226,7 @@
         const qid=questionsOrder[currentIndex];
         if(qid === '__INSTRUCTION__'){
             const instruction = currentTest.instruction;
-            let html = '<div class="instruction-block" style="padding:1rem;"><h2>Бланк регистрации</h2>';
+            let html = '<div class="instruction-block"><h2>Инструкция к тесту</h2>';
             if(instruction && instruction.blocks){
                 for(let b of instruction.blocks){
                     if(b.type==='paragraph') html+=`<p>${b.data.text}</p>`;
@@ -185,42 +235,36 @@
                     else if(b.type==='image') html+=`<img src="${b.data.file.url}" alt="${b.data.caption||''}">`;
                     else html+=`<div>${JSON.stringify(b.data)}</div>`;
                 }
-            } else {
-                html += '<p>Инструкция не заполнена.</p>';
-            }
+            } else html += '<p>Инструкция не заполнена.</p>';
             html += '</div>';
             document.getElementById('questionContent').innerHTML = html;
             document.getElementById('answerInput').style.display = 'none';
             document.getElementById('fileBar').style.display = 'none';
             return;
-        } else {
-            document.getElementById('answerInput').style.display = 'block';
-            document.getElementById('fileBar').style.display = 'flex';
-            const q=currentTest.questions.find(qq=>qq.id===qid);
-            if(!q) return;
-            let html='';
-            if(q.editorData?.blocks){
-                for(let b of q.editorData.blocks){
-                    if(b.type==='paragraph') html+=`<p>${b.data.text}</p>`;
-                    else if(b.type==='header') html+=`<h${b.data.level}>${b.data.text}</h${b.data.level}>`;
-                    else if(b.type==='list'){const tag=b.data.style==='ordered'?'ol':'ul';html+=`<${tag}>`;for(let i of b.data.items)html+=`<li>${i}</li>`;html+=`</${tag}>`;}
-                    else if(b.type==='image') html+=`<img src="${b.data.file.url}" alt="${b.data.caption||''}">`;
-                    else html+=`<div>${JSON.stringify(b.data)}</div>`;
-                }
-            } else html='<p>Нет содержимого</p>';
-            // Добавляем дополнительные файлы
-            if(q.attachments && q.attachments.length){
-                html += `<div class="question-attachments" style="margin-top:1rem;padding:0.5rem;background:#f1f5f9;border-radius:12px;"><strong>Дополнительные материалы:</strong><br>`;
-                for(let f of q.attachments){
-                    html += `<a href="${f.url}" download="${f.name}" target="_blank" class="file-link" style="display:inline-block;margin:4px;">📎 ${escapeHtml(f.name)}</a> `;
-                }
-                html += `</div>`;
-            }
-            document.getElementById('questionContent').innerHTML = html;
-            const ans=sessionAnswers[qid]||{text:'',files:[]};
-            document.getElementById('answerInput').value=ans.text;
-            renderFileBar(q);
         }
+        document.getElementById('answerInput').style.display = 'block';
+        document.getElementById('fileBar').style.display = 'flex';
+        const q=currentTest.questions.find(qq=>qq.id===qid);
+        if(!q) return;
+        let html='';
+        if(q.editorData?.blocks){
+            for(let b of q.editorData.blocks){
+                if(b.type==='paragraph') html+=`<p>${b.data.text}</p>`;
+                else if(b.type==='header') html+=`<h${b.data.level}>${b.data.text}</h${b.data.level}>`;
+                else if(b.type==='list'){const tag=b.data.style==='ordered'?'ol':'ul';html+=`<${tag}>`;for(let i of b.data.items)html+=`<li>${i}</li>`;html+=`</${tag}>`;}
+                else if(b.type==='image') html+=`<img src="${b.data.file.url}" alt="${b.data.caption||''}">`;
+                else html+=`<div>${JSON.stringify(b.data)}</div>`;
+            }
+        } else html='<p>Нет содержимого</p>';
+        if(q.attachments && q.attachments.length){
+            html+=`<div class="question-attachments"><strong>Дополнительные материалы:</strong><br>`;
+            for(let f of q.attachments) html+=`<a href="${f.url}" download="${f.name}" target="_blank" class="file-link">📎 ${escapeHtml(f.name)}</a> `;
+            html+=`</div>`;
+        }
+        document.getElementById('questionContent').innerHTML=html;
+        const ans=sessionAnswers[qid]||{text:'',files:[]};
+        document.getElementById('answerInput').value=ans.text;
+        renderFileBar(q);
     }
     async function renderFileBar(q){
         const bar=document.getElementById('fileBar');
@@ -261,16 +305,9 @@
     function renderNav(){
         const container=document.getElementById('buttonsContainer');
         let html='';
-        let questionNumber = 1;
         for(let i=0;i<questionsOrder.length;i++){
             const qid=questionsOrder[i];
-            let label;
-            if(qid === '__INSTRUCTION__'){
-                label = 'БР';
-            } else {
-                label = questionNumber.toString();
-                questionNumber++;
-            }
+            let label = (qid === '__INSTRUCTION__') ? 'Инструкция' : (i).toString();
             let answered = false;
             if(qid !== '__INSTRUCTION__'){
                 answered = sessionAnswers[qid] && (sessionAnswers[qid].text.trim()!=='' || (sessionAnswers[qid].files?.length));
@@ -364,13 +401,13 @@
             details.push({title:q.titleQuestion,userAnswer:userText,correctAnswer:correctOpts,isCorrect,points});
         }
         const percent=Math.round((earnedPoints/totalPoints)*100);
-        let html=`<div class="results-container"><h1>Результаты тестирования</h1><p><strong>Ученик:</strong> ${escapeHtml(currentTest.students?.find(s=>s.registrationNumber===localStorage.getItem('quiz_session_student_reg'))?.fullName||'')}</p><p><strong>Ваш результат:</strong> ${earnedPoints} из ${totalPoints} (${percent}%)</p><hr>`;
+        let html=`<div class="results-container"><h1>Результаты тестирования</h1><p><strong>Ученик:</strong> ${escapeHtml(localStorage.getItem('quiz_session_student_name')||'')}</p><p><strong>Ваш результат:</strong> ${earnedPoints} из ${totalPoints} (${percent}%)</p><hr>`;
         if(showDetails){
             html+=`<h2>Разбор вопросов</h2>`;
             for(let i=0;i<details.length;i++){
                 const d=details[i];
                 const cls=d.isCorrect?'result-correct':'result-incorrect';
-                const txt=d.isCorrect?`Верно (+${d.points} балл${d.points!==1?'а':''})`:`Неверно (0 баллов)`;
+                const txt=d.isCorrect?`Верно (+${d.points})`:`Неверно (0)`;
                 html+=`<div class="result-card"><strong>Вопрос ${i+1}: ${escapeHtml(d.title)} (${d.points} балл.)</strong><br>Ваш ответ: ${escapeHtml(d.userAnswer)}<br>Правильный ответ: ${escapeHtml(d.correctAnswer)}<br><span class="${cls}">${txt}</span></div>`;
             }
         } else html+=`<p>Показ правильных ответов отключён учителем.</p>`;
