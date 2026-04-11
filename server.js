@@ -5,6 +5,7 @@ const cors = require('cors');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
+const archiver = require('archiver');
 const { v4: uuidv4 } = require('uuid');
 
 const app = express();
@@ -63,12 +64,11 @@ function isSuperAdmin(req, res, next) {
     res.status(403).json({ error: 'Доступ запрещён' });
 }
 
-// ========== API ==========
+// ========== API авторизации ==========
 app.get('/api/check-session', (req, res) => {
     if (req.session.user) res.json({ authenticated: true, role: req.session.user.role });
     else res.json({ authenticated: false });
 });
-
 app.post('/api/login', async (req, res) => {
     const { username, password } = req.body;
     const users = readJSON(usersFile);
@@ -80,13 +80,11 @@ app.post('/api/login', async (req, res) => {
     addLog(user.username, 'Вход в систему', req);
     res.json({ success: true, role: user.role });
 });
-
 app.post('/api/logout', (req, res) => {
     if (req.session.user) addLog(req.session.user.username, 'Выход из системы', req);
     req.session.destroy();
     res.json({ success: true });
 });
-
 app.post('/api/change-password', isAuthenticated, async (req, res) => {
     const { oldPassword, newPassword } = req.body;
     const users = readJSON(usersFile);
@@ -100,6 +98,7 @@ app.post('/api/change-password', isAuthenticated, async (req, res) => {
     res.json({ success: true });
 });
 
+// ========== Управление администраторами ==========
 app.get('/api/users-list', isAuthenticated, isSuperAdmin, (req, res) => {
     const users = readJSON(usersFile);
     res.json(users.map(({ id, username, role, created_at }) => ({ id, username, role, created_at })));
@@ -128,6 +127,7 @@ app.post('/api/delete-admin', isAuthenticated, isSuperAdmin, (req, res) => {
 });
 app.get('/api/logs', isAuthenticated, isSuperAdmin, (req, res) => res.json(readJSON(logsFile)));
 
+// ========== Основные данные ==========
 app.get('/api/tests', isAuthenticated, (req, res) => res.json(readJSON(testsFile)));
 app.post('/api/tests', isAuthenticated, (req, res) => { writeJSON(testsFile, req.body); res.json({ success: true }); });
 app.get('/api/users', isAuthenticated, (req, res) => res.json(readJSON(usersDataFile)));
@@ -137,28 +137,60 @@ app.post('/api/tasks-base', isAuthenticated, (req, res) => { writeJSON(tasksBase
 app.get('/api/sessions', isAuthenticated, (req, res) => res.json(readJSON(sessionsFile)));
 app.post('/api/sessions', isAuthenticated, (req, res) => { writeJSON(sessionsFile, req.body); res.json({ success: true }); });
 
-app.get('/api/export-data', isAuthenticated, (req, res) => {
-    const allData = {
-        tests: readJSON(testsFile),
-        users_data: readJSON(usersDataFile),
-        tasks_base: readJSON(tasksBaseFile),
-        sessions: readJSON(sessionsFile)
-    };
-    res.setHeader('Content-Disposition', 'attachment; filename="test_constructor_backup.json"');
-    res.setHeader('Content-Type', 'application/json');
-    res.send(JSON.stringify(allData, null, 2));
+// ========== Экспорт/импорт ZIP (все данные + файлы) ==========
+app.get('/api/export-all', isAuthenticated, (req, res) => {
+    const archive = archiver('zip', { zlib: { level: 9 } });
+    res.attachment('test_constructor_backup.zip');
+    archive.pipe(res);
+    // Добавляем JSON-файлы
+    archive.append(fs.readFileSync(usersFile), { name: 'data/users.json' });
+    archive.append(fs.readFileSync(logsFile), { name: 'data/logs.json' });
+    archive.append(fs.readFileSync(testsFile), { name: 'data/tests.json' });
+    archive.append(fs.readFileSync(tasksBaseFile), { name: 'data/tasks_base.json' });
+    archive.append(fs.readFileSync(sessionsFile), { name: 'data/sessions.json' });
+    archive.append(fs.readFileSync(usersDataFile), { name: 'data/users_data.json' });
+    // Добавляем папку uploads
+    archive.directory(uploadsDir, 'uploads');
+    archive.finalize();
 });
-app.post('/api/import-data', isAuthenticated, (req, res) => {
-    const { tests, users_data, tasks_base, sessions } = req.body;
-    if (tests !== undefined) writeJSON(testsFile, tests);
-    if (users_data !== undefined) writeJSON(usersDataFile, users_data);
-    if (tasks_base !== undefined) writeJSON(tasksBaseFile, tasks_base);
-    if (sessions !== undefined) writeJSON(sessionsFile, sessions);
-    addLog(req.session.user.username, 'Импорт данных', req);
+const multerZip = multer({ storage: multer.memoryStorage() });
+app.post('/api/import-all', isAuthenticated, multerZip.single('zip'), async (req, res) => {
+    if (!req.file) return res.status(400).json({ error: 'Файл не загружен' });
+    const zipBuffer = req.file.buffer;
+    const JSZip = require('jszip');
+    const zip = await JSZip.loadAsync(zipBuffer);
+    // Восстанавливаем JSON-файлы
+    const dataFolder = zip.folder('data');
+    if (dataFolder) {
+        const users = await dataFolder.file('users.json')?.async('string');
+        if (users) fs.writeFileSync(usersFile, users);
+        const logs = await dataFolder.file('logs.json')?.async('string');
+        if (logs) fs.writeFileSync(logsFile, logs);
+        const tests = await dataFolder.file('tests.json')?.async('string');
+        if (tests) fs.writeFileSync(testsFile, tests);
+        const tasks = await dataFolder.file('tasks_base.json')?.async('string');
+        if (tasks) fs.writeFileSync(tasksBaseFile, tasks);
+        const sessions = await dataFolder.file('sessions.json')?.async('string');
+        if (sessions) fs.writeFileSync(sessionsFile, sessions);
+        const usersData = await dataFolder.file('users_data.json')?.async('string');
+        if (usersData) fs.writeFileSync(usersDataFile, usersData);
+    }
+    // Восстанавливаем uploads
+    const uploadsFolder = zip.folder('uploads');
+    if (uploadsFolder) {
+        const files = Object.values(uploadsFolder.files);
+        for (const file of files) {
+            if (!file.dir) {
+                const content = await file.async('nodebuffer');
+                fs.writeFileSync(path.join(uploadsDir, file.name), content);
+            }
+        }
+    }
+    addLog(req.session.user.username, 'Импорт всех данных (ZIP)', req);
     res.json({ success: true });
 });
 
-// Сессии учеников (без авторизации) с проверкой лимита попыток
+// ========== Сессии учеников ==========
 app.post('/api/start-session', (req, res) => {
     const { testId, studentRegNumber, studentName } = req.body;
     const tests = readJSON(testsFile);
@@ -166,8 +198,7 @@ app.post('/api/start-session', (req, res) => {
     if (!test) return res.status(404).json({ error: 'Тест не найден' });
     const student = (test.students || []).find(s => s.registrationNumber === studentRegNumber);
     if (!student) return res.status(403).json({ error: 'Код участника не найден' });
-    
-    // Проверка лимита попыток
+    // Проверка лимита попыток (по завершённым результатам)
     const attemptsLimit = test.attemptsLimit !== undefined ? test.attemptsLimit : 0;
     if (attemptsLimit > 0) {
         const results = test.results || [];
@@ -176,10 +207,9 @@ app.post('/api/start-session', (req, res) => {
             return res.status(403).json({ error: `Превышен лимит попыток (${attemptsLimit})` });
         }
     }
-    
+    // Формируем порядок вопросов (инструкция – первая)
     const shuffledIds = [...(test.questions || [])].sort(() => Math.random() - 0.5).map(q => q.id);
-    // Добавляем инструкцию в начало, если она есть
-    if(test.instruction && test.instruction.blocks && test.instruction.blocks.length){
+    if (test.instruction && test.instruction.blocks && test.instruction.blocks.length) {
         shuffledIds.unshift('__INSTRUCTION__');
     }
     const endTime = Date.now() + (test.timeLimitMinutes || 60) * 60 * 1000;
