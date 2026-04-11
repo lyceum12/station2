@@ -55,7 +55,7 @@ db.serialize(() => {
         id TEXT PRIMARY KEY,
         data TEXT
     )`);
-    // Пользователи (ученики)
+    // Пользователи (ученики) с группами
     db.run(`CREATE TABLE IF NOT EXISTS users (
         id TEXT PRIMARY KEY,
         fullName TEXT,
@@ -78,7 +78,7 @@ db.serialize(() => {
         data TEXT
     )`);
     
-    // Создание главного админа
+    // Создание главного админа, если нет
     db.get("SELECT * FROM admins WHERE username = 'admin'", async (err, row) => {
         if (!row) {
             const hash = await bcrypt.hash('admin', 10);
@@ -105,16 +105,18 @@ function allQuery(sql, params = []) {
     });
 }
 
+// Логирование
 function addLog(username, action, req) {
     const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'unknown';
-    db.run("INSERT INTO logs (username, action, ip) VALUES (?, ?, ?)", [username, action, ip]);
+    runQuery("INSERT INTO logs (username, action, ip) VALUES (?, ?, ?)", [username, action, ip]).catch(console.error);
 }
 
-function isAuthenticated(req, res, next) {
+// Middleware проверки авторизации
+async function isAuthenticated(req, res, next) {
     if (req.session.user) return next();
     res.status(401).json({ error: 'Не авторизован' });
 }
-function isSuperAdmin(req, res, next) {
+async function isSuperAdmin(req, res, next) {
     if (req.session.user && req.session.user.role === 'super_admin') return next();
     res.status(403).json({ error: 'Доступ запрещён' });
 }
@@ -124,6 +126,7 @@ app.get('/api/check-session', (req, res) => {
     if (req.session.user) res.json({ authenticated: true, role: req.session.user.role });
     else res.json({ authenticated: false });
 });
+
 app.post('/api/login', async (req, res) => {
     const { username, password } = req.body;
     const user = await getQuery("SELECT * FROM admins WHERE username = ?", [username]);
@@ -134,126 +137,101 @@ app.post('/api/login', async (req, res) => {
     addLog(user.username, 'Вход в систему', req);
     res.json({ success: true, role: user.role });
 });
+
 app.post('/api/logout', (req, res) => {
     if (req.session.user) addLog(req.session.user.username, 'Выход из системы', req);
     req.session.destroy();
     res.json({ success: true });
 });
+
 app.post('/api/change-password', isAuthenticated, async (req, res) => {
     const { oldPassword, newPassword } = req.body;
     const user = await getQuery("SELECT * FROM admins WHERE id = ?", [req.session.user.id]);
     if (!user) return res.status(401).json({ error: 'Пользователь не найден' });
     const match = await bcrypt.compare(oldPassword, user.password_hash);
     if (!match) return res.status(401).json({ error: 'Неверный текущий пароль' });
-    const hash = await bcrypt.hash(newPassword, 10);
-    await runQuery("UPDATE admins SET password_hash = ? WHERE id = ?", [hash, req.session.user.id]);
+    const newHash = await bcrypt.hash(newPassword, 10);
+    await runQuery("UPDATE admins SET password_hash = ? WHERE id = ?", [newHash, req.session.user.id]);
     addLog(req.session.user.username, 'Смена пароля', req);
     res.json({ success: true });
 });
 
-// ========== Управление администраторами ==========
-app.get('/api/admins', isAuthenticated, isSuperAdmin, async (req, res) => {
-    const rows = await allQuery("SELECT id, username, role, created_at FROM admins");
-    res.json(rows);
+// ========== Управление администраторами (только super_admin) ==========
+app.get('/api/admins-list', isAuthenticated, isSuperAdmin, async (req, res) => {
+    const admins = await allQuery("SELECT id, username, role, created_at FROM admins");
+    res.json(admins);
 });
-app.post('/api/admins', isAuthenticated, isSuperAdmin, async (req, res) => {
+
+app.post('/api/create-admin', isAuthenticated, isSuperAdmin, async (req, res) => {
     const { username, password, role } = req.body;
     if (!username || !password) return res.status(400).json({ error: 'Заполните все поля' });
-    const existing = await getQuery("SELECT * FROM admins WHERE username = ?", [username]);
+    const existing = await getQuery("SELECT id FROM admins WHERE username = ?", [username]);
     if (existing) return res.status(400).json({ error: 'Пользователь уже существует' });
     const hash = await bcrypt.hash(password, 10);
     await runQuery("INSERT INTO admins (username, password_hash, role) VALUES (?, ?, ?)", [username, hash, role || 'admin']);
-    addLog(req.session.user.username, `Создан администратор ${username}`, req);
+    addLog(req.session.user.username, `Создан администратор ${username} (${role})`, req);
     res.json({ success: true });
 });
-app.delete('/api/admins/:id', isAuthenticated, isSuperAdmin, async (req, res) => {
-    const id = parseInt(req.params.id);
-    if (id === req.session.user.id) return res.status(400).json({ error: 'Нельзя удалить себя' });
+
+app.post('/api/delete-admin', isAuthenticated, isSuperAdmin, async (req, res) => {
+    const { id } = req.body;
+    if (id == req.session.user.id) return res.status(400).json({ error: 'Нельзя удалить себя' });
+    const admin = await getQuery("SELECT username FROM admins WHERE id = ?", [id]);
+    if (!admin) return res.status(404).json({ error: 'Не найден' });
     await runQuery("DELETE FROM admins WHERE id = ?", [id]);
-    addLog(req.session.user.username, `Удалён администратор id=${id}`, req);
+    addLog(req.session.user.username, `Удалён администратор ${admin.username}`, req);
     res.json({ success: true });
 });
+
 app.get('/api/logs', isAuthenticated, isSuperAdmin, async (req, res) => {
-    const logs = await allQuery("SELECT * FROM logs ORDER BY timestamp DESC LIMIT 500");
+    const logs = await allQuery("SELECT * FROM logs ORDER BY timestamp DESC LIMIT 1000");
     res.json(logs);
 });
 
-// ========== Группы ==========
-app.get('/api/groups', isAuthenticated, async (req, res) => {
-    const groups = await allQuery("SELECT id, name FROM groups");
-    res.json(groups);
-});
-app.post('/api/groups', isAuthenticated, async (req, res) => {
-    const { name } = req.body;
-    if (!name) return res.status(400).json({ error: 'Введите название' });
-    await runQuery("INSERT INTO groups (name) VALUES (?)", [name]);
-    res.json({ success: true });
-});
-app.put('/api/groups/:id', isAuthenticated, async (req, res) => {
-    const { name } = req.body;
-    await runQuery("UPDATE groups SET name = ? WHERE id = ?", [name, req.params.id]);
-    res.json({ success: true });
-});
-app.delete('/api/groups/:id', isAuthenticated, async (req, res) => {
-    await runQuery("DELETE FROM groups WHERE id = ?", [req.params.id]);
-    res.json({ success: true });
-});
-
-// ========== Пользователи (ученики) ==========
-app.get('/api/users', isAuthenticated, async (req, res) => {
-    const users = await allQuery("SELECT id, fullName, registrationNumber, groupName FROM users");
-    res.json(users);
-});
-app.post('/api/users', isAuthenticated, async (req, res) => {
-    const { fullName, registrationNumber, groupName } = req.body;
-    if (!fullName) return res.status(400).json({ error: 'Введите ФИО' });
-    let code = registrationNumber;
-    if (!code) {
-        // Генерация уникального 6-значного кода
-        let exists = true;
-        while (exists) {
-            code = Math.floor(100000 + Math.random() * 900000).toString();
-            const existing = await getQuery("SELECT * FROM users WHERE registrationNumber = ?", [code]);
-            exists = !!existing;
-        }
-    } else {
-        const existing = await getQuery("SELECT * FROM users WHERE registrationNumber = ?", [code]);
-        if (existing) return res.status(400).json({ error: 'Код уже существует' });
-    }
-    const id = uuidv4();
-    await runQuery("INSERT INTO users (id, fullName, registrationNumber, groupName) VALUES (?, ?, ?, ?)", [id, fullName, code, groupName || null]);
-    res.json({ success: true, user: { id, fullName, registrationNumber: code, groupName } });
-});
-app.put('/api/users/:id', isAuthenticated, async (req, res) => {
-    const { fullName, registrationNumber, groupName } = req.body;
-    const existing = await getQuery("SELECT * FROM users WHERE registrationNumber = ? AND id != ?", [registrationNumber, req.params.id]);
-    if (existing) return res.status(400).json({ error: 'Код уже используется другим пользователем' });
-    await runQuery("UPDATE users SET fullName = ?, registrationNumber = ?, groupName = ? WHERE id = ?", [fullName, registrationNumber, groupName || null, req.params.id]);
-    res.json({ success: true });
-});
-app.delete('/api/users/:id', isAuthenticated, async (req, res) => {
-    await runQuery("DELETE FROM users WHERE id = ?", [req.params.id]);
-    res.json({ success: true });
-});
-
-// ========== Тесты ==========
+// ========== API для тестов ==========
 app.get('/api/tests', isAuthenticated, async (req, res) => {
     const row = await getQuery("SELECT data FROM tests WHERE id = 'all_tests'");
     res.json(row ? JSON.parse(row.data) : []);
 });
 app.post('/api/tests', isAuthenticated, async (req, res) => {
-    await runQuery("INSERT OR REPLACE INTO tests (id, data) VALUES (?, ?)", ['all_tests', JSON.stringify(req.body)]);
+    const tests = req.body;
+    await runQuery("INSERT OR REPLACE INTO tests (id, data) VALUES (?, ?)", ['all_tests', JSON.stringify(tests)]);
     addLog(req.session.user.username, 'Сохранение тестов', req);
     res.json({ success: true });
 });
 
-// ========== База заданий ==========
+// ========== API для пользователей (ученики и группы) ==========
+app.get('/api/users', isAuthenticated, async (req, res) => {
+    const groups = await allQuery("SELECT name FROM groups");
+    const users = await allQuery("SELECT id, fullName, registrationNumber, groupName FROM users");
+    res.json({ groups: groups.map(g => ({ name: g.name })), users });
+});
+app.post('/api/users', isAuthenticated, async (req, res) => {
+    const { groups, users } = req.body;
+    // Обновляем группы
+    await runQuery("DELETE FROM groups");
+    for (const g of groups) {
+        await runQuery("INSERT INTO groups (name) VALUES (?)", [g.name]);
+    }
+    // Обновляем пользователей
+    await runQuery("DELETE FROM users");
+    for (const u of users) {
+        await runQuery("INSERT INTO users (id, fullName, registrationNumber, groupName) VALUES (?, ?, ?, ?)", 
+            [u.id, u.fullName, u.registrationNumber, u.groupName]);
+    }
+    addLog(req.session.user.username, 'Сохранение пользователей', req);
+    res.json({ success: true });
+});
+
+// ========== API для базы заданий ==========
 app.get('/api/tasks-base', isAuthenticated, async (req, res) => {
     const row = await getQuery("SELECT data FROM tasks_base WHERE id = 'all_tasks'");
     res.json(row ? JSON.parse(row.data) : []);
 });
 app.post('/api/tasks-base', isAuthenticated, async (req, res) => {
-    await runQuery("INSERT OR REPLACE INTO tasks_base (id, data) VALUES (?, ?)", ['all_tasks', JSON.stringify(req.body)]);
+    const tasks = req.body;
+    await runQuery("INSERT OR REPLACE INTO tasks_base (id, data) VALUES (?, ?)", ['all_tasks', JSON.stringify(tasks)]);
+    addLog(req.session.user.username, 'Сохранение базы заданий', req);
     res.json({ success: true });
 });
 
@@ -263,30 +241,21 @@ app.get('/api/sessions', isAuthenticated, async (req, res) => {
     res.json(row ? JSON.parse(row.data) : []);
 });
 app.post('/api/sessions', isAuthenticated, async (req, res) => {
-    await runQuery("INSERT OR REPLACE INTO sessions (id, data) VALUES (?, ?)", ['all_sessions', JSON.stringify(req.body)]);
+    const sessions = req.body;
+    await runQuery("INSERT OR REPLACE INTO sessions (id, data) VALUES (?, ?)", ['all_sessions', JSON.stringify(sessions)]);
     res.json({ success: true });
 });
 
-// Старт сессии (без авторизации)
+// Старт сессии учеником (без авторизации)
 app.post('/api/start-session', async (req, res) => {
-    const { testId, testLogin, studentCode } = req.body;
-    // Получаем тест
-    const testRow = await getQuery("SELECT data FROM tests WHERE id = 'all_tests'");
-    const tests = testRow ? JSON.parse(testRow.data) : [];
+    const { testId, studentCode, studentName } = req.body;
+    const testsRow = await getQuery("SELECT data FROM tests WHERE id = 'all_tests'");
+    const tests = testsRow ? JSON.parse(testsRow.data) : [];
     const test = tests.find(t => t.id === testId);
     if (!test) return res.status(404).json({ error: 'Тест не найден' });
-    // Проверяем логин теста
-    if (test.testLogin !== testLogin) return res.status(403).json({ error: 'Неверный логин теста' });
-    // Проверяем ученика по коду
-    const student = await getQuery("SELECT * FROM users WHERE registrationNumber = ?", [studentCode]);
-    if (!student) return res.status(403).json({ error: 'Неверный код участника' });
-    // Проверяем, добавлен ли ученик в этот тест
-    const testStudents = test.students || [];
-    if (!testStudents.some(s => s.registrationNumber === studentCode)) {
-        return res.status(403).json({ error: 'Вы не добавлены в этот тест' });
-    }
-    // Лимит попыток
-    const attemptsLimit = test.attemptsLimit || 0;
+    const student = (test.students || []).find(s => s.registrationNumber === studentCode);
+    if (!student) return res.status(403).json({ error: 'Код участника не найден' });
+    const attemptsLimit = test.attemptsLimit !== undefined ? test.attemptsLimit : 0;
     if (attemptsLimit > 0) {
         const results = test.results || [];
         const attemptsCount = results.filter(r => r.studentRegNumber === studentCode).length;
@@ -294,21 +263,15 @@ app.post('/api/start-session', async (req, res) => {
             return res.status(403).json({ error: `Превышен лимит попыток (${attemptsLimit})` });
         }
     }
-    // Формируем порядок вопросов
-    let questionsOrder = [...(test.questions || [])].sort(() => Math.random() - 0.5).map(q => q.id);
-    if (test.instruction && test.instruction.blocks && test.instruction.blocks.length) {
-        questionsOrder.unshift('__INSTRUCTION__');
-    }
+    const shuffledIds = [...(test.questions || [])].sort(() => Math.random() - 0.5).map(q => q.id);
+    if (test.instruction && test.instruction.blocks && test.instruction.blocks.length) shuffledIds.unshift('__INSTRUCTION__');
     const endTime = Date.now() + (test.timeLimitMinutes || 60) * 60 * 1000;
     const sessionId = uuidv4();
-    const sessions = await getQuery("SELECT data FROM sessions WHERE id = 'all_sessions'") || { data: '[]' };
-    let sessionsList = JSON.parse(sessions.data);
-    sessionsList.push({
-        id: sessionId, testId, studentRegNumber: studentCode, studentName: student.fullName,
-        startTime: Date.now(), endTimestamp: endTime, questionsOrder, currentIndex: 0, answers: {}
-    });
-    await runQuery("INSERT OR REPLACE INTO sessions (id, data) VALUES (?, ?)", ['all_sessions', JSON.stringify(sessionsList)]);
-    res.json({ sessionId, endTimestamp: endTime, questionsOrder });
+    const sessionsRow = await getQuery("SELECT data FROM sessions WHERE id = 'all_sessions'");
+    let sessions = sessionsRow ? JSON.parse(sessionsRow.data) : [];
+    sessions.push({ id: sessionId, testId, studentRegNumber: studentCode, studentName, startTime: Date.now(), endTimestamp: endTime, questionsOrder: shuffledIds, currentIndex: 0, answers: {} });
+    await runQuery("INSERT OR REPLACE INTO sessions (id, data) VALUES (?, ?)", ['all_sessions', JSON.stringify(sessions)]);
+    res.json({ sessionId, endTimestamp: endTime, questionsOrder: shuffledIds });
 });
 
 app.get('/api/session/:sessionId', async (req, res) => {
@@ -337,7 +300,6 @@ app.post('/api/finish-session/:sessionId', async (req, res) => {
     const idx = sessions.findIndex(s => s.id === req.params.sessionId);
     if (idx === -1) return res.status(404).json({ error: 'Сессия не найдена' });
     const session = sessions[idx];
-    // Сохраняем результат в тест
     const testsRow = await getQuery("SELECT data FROM tests WHERE id = 'all_tests'");
     let tests = testsRow ? JSON.parse(testsRow.data) : [];
     const testIdx = tests.findIndex(t => t.id === session.testId);
@@ -356,7 +318,7 @@ app.post('/api/finish-session/:sessionId', async (req, res) => {
     res.json({ success: true });
 });
 
-// Загрузка файлов
+// ========== Загрузка файлов ==========
 const storage = multer.diskStorage({
     destination: (req, file, cb) => cb(null, uploadsDir),
     filename: (req, file, cb) => cb(null, uuidv4() + path.extname(file.originalname))
@@ -372,16 +334,22 @@ app.get('/api/uploads/:filename', (req, res) => {
     else res.status(404).json({ error: 'Файл не найден' });
 });
 
-// Экспорт / импорт всей БД
+// ========== Экспорт / импорт всей БД в файл .db ==========
 app.get('/api/export-db', isAuthenticated, (req, res) => {
     res.download(dbPath, 'test_constructor.db');
 });
-const uploadDb = multer({ storage: multer.memoryStorage() });
-app.post('/api/import-db', isAuthenticated, uploadDb.single('db'), async (req, res) => {
+const multerDb = multer({ storage: multer.memoryStorage() });
+app.post('/api/import-db', isAuthenticated, multerDb.single('db'), async (req, res) => {
     if (!req.file) return res.status(400).json({ error: 'Файл не загружен' });
-    fs.writeFileSync(dbPath, req.file.buffer);
-    addLog(req.session.user.username, 'Импорт базы данных', req);
-    res.json({ success: true });
+    const newDbPath = dbPath + '.new';
+    fs.writeFileSync(newDbPath, req.file.buffer);
+    // Закрываем текущее соединение и заменяем файл
+    db.close(() => {
+        fs.renameSync(newDbPath, dbPath);
+        addLog(req.session.user.username, 'Импорт базы данных', req);
+        res.json({ success: true });
+        // Перезапуск сервера не требуется, но лучше перезагрузить страницу
+    });
 });
 
 app.listen(PORT, '0.0.0.0', () => {
