@@ -56,8 +56,8 @@
 
 <div class="admin-panel" id="adminPanel">
     <div class="top-bar">
-        <button id="exportDataBtn" class="btn">Сохранить все данные</button>
-        <label class="btn">Загрузить данные<input type="file" id="importDataInput" accept=".json" style="display:none;"></label>
+        <button id="exportZipBtn" class="btn">Сохранить всё (ZIP)</button>
+        <label class="btn">Загрузить всё (ZIP)<input type="file" id="importZipInput" accept=".zip" style="display:none;"></label>
         <button id="changePwdBtn" class="btn">Сменить пароль</button>
         <button id="adminsBtn" class="btn btn-outline" style="display:none;">Администраторы</button>
         <button id="logoutBtn" class="btn">Выйти</button>
@@ -74,58 +74,11 @@
     <footer>Редактируйте вопросы, добавляйте изображения</footer>
 </div>
 
-<!-- Модальное окно управления администраторами -->
-<div id="adminsModal" class="modal">
-    <div class="modal-content">
-        <h2>Управление администраторами</h2>
-        <div style="margin-bottom:1rem;">
-            <button id="createAdminBtnInModal" class="btn btn-primary">+ Добавить администратора</button>
-            <button id="viewLogsBtnInModal" class="btn">Просмотр логов</button>
-        </div>
-        <div id="adminsListInModal"></div>
-        <div class="modal-buttons"><button id="closeAdminsModalBtn" class="btn">Закрыть</button></div>
-    </div>
-</div>
-
-<!-- Модальное окно добавления администратора -->
-<div id="adminModal" class="modal">
-    <div class="modal-content">
-        <h3>Новый администратор</h3>
-        <input type="text" id="newAdminUsername" placeholder="Логин">
-        <input type="password" id="newAdminPassword" placeholder="Пароль">
-        <select id="newAdminRole">
-            <option value="admin">Обычный администратор</option>
-            <option value="super_admin">Главный администратор</option>
-        </select>
-        <div class="modal-buttons">
-            <button id="cancelAdminBtn" class="btn">Отмена</button>
-            <button id="saveAdminBtn" class="btn btn-primary">Создать</button>
-        </div>
-    </div>
-</div>
-
-<!-- Модальное окно просмотра логов -->
-<div id="logsModal" class="modal">
-    <div class="modal-content" style="max-width:800px;">
-        <h3>Логи действий</h3>
-        <div id="logsList" style="max-height:400px;overflow-y:auto;"></div>
-        <div class="modal-buttons"><button id="closeLogsBtn" class="btn">Закрыть</button></div>
-    </div>
-</div>
-
-<!-- Модальное окно смены пароля -->
-<div id="changePwdModal" class="modal">
-    <div class="modal-content">
-        <h3>Смена пароля</h3>
-        <input type="password" id="oldPwd" placeholder="Старый пароль">
-        <input type="password" id="newPwd" placeholder="Новый пароль">
-        <input type="password" id="confirmPwd" placeholder="Подтверждение">
-        <div class="modal-buttons">
-            <button id="cancelPwdBtn" class="btn">Отмена</button>
-            <button id="savePwdBtn" class="btn btn-primary">Сохранить</button>
-        </div>
-    </div>
-</div>
+<!-- Модальные окна (смена пароля, администраторы, логи) – без изменений -->
+<div id="changePwdModal" class="modal"><div class="modal-content"><h3>Смена пароля</h3><input type="password" id="oldPwd" placeholder="Старый пароль"><input type="password" id="newPwd" placeholder="Новый пароль"><input type="password" id="confirmPwd" placeholder="Подтверждение"><div class="modal-buttons"><button id="cancelPwdBtn" class="btn">Отмена</button><button id="savePwdBtn" class="btn btn-primary">Сохранить</button></div></div></div>
+<div id="adminsModal" class="modal"><div class="modal-content"><h2>Управление администраторами</h2><div style="margin-bottom:1rem;"><button id="createAdminBtnInModal" class="btn btn-primary">+ Добавить администратора</button><button id="viewLogsBtnInModal" class="btn">Просмотр логов</button></div><div id="adminsListInModal"></div><div class="modal-buttons"><button id="closeAdminsModalBtn" class="btn">Закрыть</button></div></div></div>
+<div id="adminModal" class="modal"><div class="modal-content"><h3>Новый администратор</h3><input type="text" id="newAdminUsername" placeholder="Логин"><input type="password" id="newAdminPassword" placeholder="Пароль"><select id="newAdminRole"><option value="admin">Обычный администратор</option><option value="super_admin">Главный администратор</option></select><div class="modal-buttons"><button id="cancelAdminBtn" class="btn">Отмена</button><button id="saveAdminBtn" class="btn btn-primary">Создать</button></div></div></div>
+<div id="logsModal" class="modal"><div class="modal-content" style="max-width:800px;"><h3>Логи действий</h3><div id="logsList" style="max-height:400px;overflow-y:auto;"></div><div class="modal-buttons"><button id="closeLogsBtn" class="btn">Закрыть</button></div></div></div>
 
 <script>
     let currentUserRole = null;
@@ -143,11 +96,8 @@
             document.getElementById('loginContainer').style.display = 'none';
             document.getElementById('adminPanel').style.display = 'block';
             const adminsBtn = document.getElementById('adminsBtn');
-            if(currentUserRole === 'super_admin') {
-                adminsBtn.style.display = 'inline-flex';
-            } else {
-                adminsBtn.style.display = 'none';
-            }
+            if(currentUserRole === 'super_admin') adminsBtn.style.display = 'inline-flex';
+            else adminsBtn.style.display = 'none';
             loadTests();
         } else {
             document.getElementById('loginContainer').style.display = 'block';
@@ -160,7 +110,7 @@
         if(!tests.length) { container.innerHTML = '<div class="empty-state">Нет ни одного теста. Нажмите "Создать новый тест"</div>'; return; }
         container.innerHTML = tests.map(test => `
             <div class="test-card">
-                <div class="test-info"><h3>${escapeHtml(test.title)}</h3><p>Вопросов: ${test.questions?.length||0} | Время: ${test.timeLimitMinutes||60} мин | Попыток: ${test.attemptsLimit===0?'∞':test.attemptsLimit}</p></div>
+                <div class="test-info"><h3>${escapeHtml(test.title)}</h3><p>Вопросов: ${test.questions?.length||0} | Время: ${test.timeLimitMinutes||60} мин</p></div>
                 <div class="test-actions">
                     <button class="btn btn-outline edit-questions-btn" data-id="${test.id}">Редактировать вопросы</button>
                     <button class="btn btn-outline manage-test-btn" data-id="${test.id}">Управление</button>
@@ -180,12 +130,13 @@
             }
         });
     }
+    // Функции для администраторов (аналогичны предыдущей версии)
     async function loadAdminsList() {
         try {
             const admins = await fetchJson('/api/users-list');
             const container = document.getElementById('adminsListInModal');
             if(!admins.length) { container.innerHTML = '<p>Нет администраторов</p>'; return; }
-            container.innerHTML = `<tr><thead><tr><th>Логин</th><th>Роль</th><th>Дата создания</th><th>Действия</th></tr></thead><tbody>${admins.map(a => `<tr><td>${escapeHtml(a.username)}</td><td>${escapeHtml(a.role)}</td><td>${new Date(a.created_at).toLocaleString()}</td><td>${a.username !== 'admin' ? `<button class="btn delete-admin" data-id="${a.id}">Удалить</button>` : ''}</td>`).join('')}</tbody></table>`;
+            container.innerHTML = `<table><thead><tr><th>Логин</th><th>Роль</th><th>Дата создания</th><th>Действия</th></tr></thead><tbody>${admins.map(a => `<tr><td>${escapeHtml(a.username)}</td><td>${escapeHtml(a.role)}</td><td>${new Date(a.created_at).toLocaleString()}</td><td>${a.username !== 'admin' ? `<button class="btn delete-admin" data-id="${a.id}">Удалить</button>` : ''}</td></tr>`).join('')}</tbody></table>`;
             document.querySelectorAll('.delete-admin').forEach(btn => btn.onclick = async () => {
                 if(confirm('Удалить администратора?')) {
                     await fetchJson('/api/delete-admin', { method:'POST', body:JSON.stringify({ id: parseInt(btn.dataset.id) }) });
@@ -200,26 +151,27 @@
             const logs = await fetchJson('/api/logs');
             const container = document.getElementById('logsList');
             if(!logs.length) { container.innerHTML = '<p>Логов нет</p>'; return; }
-            container.innerHTML = `<table style="width:100%;font-size:0.8rem;"><thead><tr><th>Дата</th><th>Пользователь</th><th>Действие</th><th>IP</th></tr></thead><tbody>${logs.map(l => `<tr><td>${new Date(l.timestamp).toLocaleString()}</td><td>${escapeHtml(l.username)}</td><td>${escapeHtml(l.action)}</td><td>${escapeHtml(l.ip)}</td>`).join('')}</tbody></table>`;
+            container.innerHTML = `<table style="width:100%;font-size:0.8rem;"><thead><tr><th>Дата</th><th>Пользователь</th><th>Действие</th><th>IP</th></tr></thead><tbody>${logs.map(l => `<tr><td>${new Date(l.timestamp).toLocaleString()}</td><td>${escapeHtml(l.username)}</td><td>${escapeHtml(l.action)}</td><td>${escapeHtml(l.ip)}</td></tr>`).join('')}</tbody></table>`;
         } catch(e) { showToast(e.message, true); }
     }
     function escapeHtml(s){if(!s)return '';return s.replace(/[&<>]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[m]));}
-    document.getElementById('exportDataBtn').onclick = () => window.location.href = '/api/export-data';
-    document.getElementById('importDataInput').onchange = async (e) => {
+    
+    document.getElementById('exportZipBtn').onclick = () => window.location.href = '/api/export-all';
+    document.getElementById('importZipInput').onchange = async (e) => {
         const file = e.target.files[0];
         if(!file) return;
-        const reader = new FileReader();
-        reader.onload = async (ev) => {
-            try {
-                const data = JSON.parse(ev.target.result);
-                await fetch('/api/import-data', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(data) });
+        const formData = new FormData();
+        formData.append('zip', file);
+        try {
+            const res = await fetch('/api/import-all', { method: 'POST', body: formData });
+            if(res.ok){
                 showToast('Данные загружены, страница будет перезагружена');
                 setTimeout(()=>location.reload(), 1500);
-            } catch(err) { showToast('Ошибка импорта: '+err.message, true); }
-        };
-        reader.readAsText(file);
+            } else showToast('Ошибка импорта', true);
+        } catch(err) { showToast(err.message, true); }
         e.target.value = '';
     };
+    
     document.getElementById('loginBtn').onclick = async () => {
         const username = document.getElementById('username').value;
         const password = document.getElementById('password').value;
@@ -244,11 +196,9 @@
             checkSession();
         } catch(e) { showToast(e.message, true); }
     };
+    // Управление администраторами
     const adminsModal = document.getElementById('adminsModal');
-    document.getElementById('adminsBtn').onclick = async () => {
-        await loadAdminsList();
-        adminsModal.style.display = 'flex';
-    };
+    document.getElementById('adminsBtn').onclick = async () => { await loadAdminsList(); adminsModal.style.display = 'flex'; };
     document.getElementById('closeAdminsModalBtn').onclick = () => adminsModal.style.display = 'none';
     const adminModal = document.getElementById('adminModal');
     document.getElementById('createAdminBtnInModal').onclick = () => adminModal.style.display = 'flex';
@@ -264,16 +214,14 @@
         } catch(e) { showToast(e.message, true); }
     };
     const logsModal = document.getElementById('logsModal');
-    document.getElementById('viewLogsBtnInModal').onclick = async () => {
-        await loadLogs();
-        logsModal.style.display = 'flex';
-    };
+    document.getElementById('viewLogsBtnInModal').onclick = async () => { await loadLogs(); logsModal.style.display = 'flex'; };
     document.getElementById('closeLogsBtn').onclick = () => logsModal.style.display = 'none';
+    
     document.getElementById('manageUsersBtn').onclick = () => location.href = 'users.html';
     document.getElementById('manageTasksBaseBtn').onclick = () => location.href = 'tasks-base.html';
     document.getElementById('createTestBtn').onclick = async () => {
         const newId = 'test_' + Date.now() + '_' + Math.floor(Math.random()*1000);
-        const newTest = { id:newId, title:"Новый тест", createdAt:new Date().toISOString(), timeLimitMinutes:60, attemptsLimit:0, students:[], results:[], questions:[], showCorrectAnswersAfterTest:false };
+        const newTest = { id:newId, title:"Новый тест", createdAt:new Date().toISOString(), timeLimitMinutes:60, attemptsLimit:0, testLogin:"", students:[], results:[], questions:[], showCorrectAnswersAfterTest:false };
         let tests = await fetchJson('/api/tests');
         tests.push(newTest);
         await fetchJson('/api/tests', { method:'POST', body:JSON.stringify(tests) });
