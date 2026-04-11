@@ -5,13 +5,14 @@ const cors = require('cors');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
-const archiver = require('archiver');
+const sqlite3 = require('sqlite3').verbose();
 const { v4: uuidv4 } = require('uuid');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-app.use(cors());
+// Middleware
+app.use(cors({ origin: true, credentials: true }));
 app.use(express.json({ limit: '50mb' }));
 app.use(express.static('public'));
 app.use(session({
@@ -21,38 +22,92 @@ app.use(session({
     cookie: { secure: false, httpOnly: true, maxAge: 1000 * 60 * 60 * 24 }
 }));
 
+// Папки
 const dataDir = path.join(__dirname, 'data');
 const uploadsDir = path.join(__dirname, 'uploads');
 if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir);
 if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir);
 
-const usersFile = path.join(dataDir, 'users.json');
-const logsFile = path.join(dataDir, 'logs.json');
-const testsFile = path.join(dataDir, 'tests.json');
-const tasksBaseFile = path.join(dataDir, 'tasks_base.json');
-const sessionsFile = path.join(dataDir, 'sessions.json');
-const usersDataFile = path.join(dataDir, 'users_data.json');
+// SQLite база данных
+const dbPath = path.join(dataDir, 'test_constructor.db');
+const db = new sqlite3.Database(dbPath);
 
-if (!fs.existsSync(usersFile)) {
-    fs.writeFileSync(usersFile, JSON.stringify([
-        { id: 1, username: 'admin', password_hash: bcrypt.hashSync('admin', 10), role: 'super_admin', created_at: new Date().toISOString() }
-    ], null, 2));
+// Инициализация таблиц
+db.serialize(() => {
+    // Администраторы
+    db.run(`CREATE TABLE IF NOT EXISTS admins (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        username TEXT UNIQUE,
+        password_hash TEXT,
+        role TEXT DEFAULT 'admin',
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )`);
+    // Логи
+    db.run(`CREATE TABLE IF NOT EXISTS logs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        username TEXT,
+        action TEXT,
+        ip TEXT,
+        timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+    )`);
+    // Тесты (хранятся как JSON)
+    db.run(`CREATE TABLE IF NOT EXISTS tests (
+        id TEXT PRIMARY KEY,
+        data TEXT
+    )`);
+    // Пользователи (ученики)
+    db.run(`CREATE TABLE IF NOT EXISTS users (
+        id TEXT PRIMARY KEY,
+        fullName TEXT,
+        registrationNumber TEXT UNIQUE,
+        groupName TEXT
+    )`);
+    // Группы
+    db.run(`CREATE TABLE IF NOT EXISTS groups (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT UNIQUE
+    )`);
+    // База заданий
+    db.run(`CREATE TABLE IF NOT EXISTS tasks_base (
+        id TEXT PRIMARY KEY,
+        data TEXT
+    )`);
+    // Активные сессии учеников
+    db.run(`CREATE TABLE IF NOT EXISTS sessions (
+        id TEXT PRIMARY KEY,
+        data TEXT
+    )`);
+    
+    // Создание главного админа
+    db.get("SELECT * FROM admins WHERE username = 'admin'", async (err, row) => {
+        if (!row) {
+            const hash = await bcrypt.hash('admin', 10);
+            db.run("INSERT INTO admins (username, password_hash, role) VALUES (?, ?, ?)", ['admin', hash, 'super_admin']);
+            console.log('Создан главный администратор: admin / admin');
+        }
+    });
+});
+
+// Вспомогательные функции
+function runQuery(sql, params = []) {
+    return new Promise((resolve, reject) => {
+        db.run(sql, params, function(err) { if (err) reject(err); else resolve(this); });
+    });
 }
-if (!fs.existsSync(logsFile)) fs.writeFileSync(logsFile, '[]');
-if (!fs.existsSync(testsFile)) fs.writeFileSync(testsFile, '[]');
-if (!fs.existsSync(tasksBaseFile)) fs.writeFileSync(tasksBaseFile, '[]');
-if (!fs.existsSync(sessionsFile)) fs.writeFileSync(sessionsFile, '[]');
-if (!fs.existsSync(usersDataFile)) fs.writeFileSync(usersDataFile, JSON.stringify({ groups: [], users: [] }));
-
-function readJSON(file) { return JSON.parse(fs.readFileSync(file, 'utf8')); }
-function writeJSON(file, data) { fs.writeFileSync(file, JSON.stringify(data, null, 2)); }
+function getQuery(sql, params = []) {
+    return new Promise((resolve, reject) => {
+        db.get(sql, params, (err, row) => { if (err) reject(err); else resolve(row); });
+    });
+}
+function allQuery(sql, params = []) {
+    return new Promise((resolve, reject) => {
+        db.all(sql, params, (err, rows) => { if (err) reject(err); else resolve(rows); });
+    });
+}
 
 function addLog(username, action, req) {
     const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'unknown';
-    const logs = readJSON(logsFile);
-    logs.unshift({ timestamp: new Date().toISOString(), username, action, ip });
-    if (logs.length > 1000) logs.pop();
-    writeJSON(logsFile, logs);
+    db.run("INSERT INTO logs (username, action, ip) VALUES (?, ?, ?)", [username, action, ip]);
 }
 
 function isAuthenticated(req, res, next) {
@@ -71,8 +126,7 @@ app.get('/api/check-session', (req, res) => {
 });
 app.post('/api/login', async (req, res) => {
     const { username, password } = req.body;
-    const users = readJSON(usersFile);
-    const user = users.find(u => u.username === username);
+    const user = await getQuery("SELECT * FROM admins WHERE username = ?", [username]);
     if (!user) return res.status(401).json({ error: 'Неверный логин или пароль' });
     const match = await bcrypt.compare(password, user.password_hash);
     if (!match) return res.status(401).json({ error: 'Неверный логин или пароль' });
@@ -87,168 +141,205 @@ app.post('/api/logout', (req, res) => {
 });
 app.post('/api/change-password', isAuthenticated, async (req, res) => {
     const { oldPassword, newPassword } = req.body;
-    const users = readJSON(usersFile);
-    const user = users.find(u => u.id === req.session.user.id);
+    const user = await getQuery("SELECT * FROM admins WHERE id = ?", [req.session.user.id]);
     if (!user) return res.status(401).json({ error: 'Пользователь не найден' });
     const match = await bcrypt.compare(oldPassword, user.password_hash);
     if (!match) return res.status(401).json({ error: 'Неверный текущий пароль' });
-    user.password_hash = await bcrypt.hash(newPassword, 10);
-    writeJSON(usersFile, users);
+    const hash = await bcrypt.hash(newPassword, 10);
+    await runQuery("UPDATE admins SET password_hash = ? WHERE id = ?", [hash, req.session.user.id]);
     addLog(req.session.user.username, 'Смена пароля', req);
     res.json({ success: true });
 });
 
 // ========== Управление администраторами ==========
-app.get('/api/users-list', isAuthenticated, isSuperAdmin, (req, res) => {
-    const users = readJSON(usersFile);
-    res.json(users.map(({ id, username, role, created_at }) => ({ id, username, role, created_at })));
+app.get('/api/admins', isAuthenticated, isSuperAdmin, async (req, res) => {
+    const rows = await allQuery("SELECT id, username, role, created_at FROM admins");
+    res.json(rows);
 });
-app.post('/api/create-admin', isAuthenticated, isSuperAdmin, async (req, res) => {
+app.post('/api/admins', isAuthenticated, isSuperAdmin, async (req, res) => {
     const { username, password, role } = req.body;
     if (!username || !password) return res.status(400).json({ error: 'Заполните все поля' });
-    const users = readJSON(usersFile);
-    if (users.find(u => u.username === username)) return res.status(400).json({ error: 'Пользователь уже существует' });
-    const newId = users.length ? Math.max(...users.map(u => u.id)) + 1 : 2;
-    users.push({ id: newId, username, password_hash: await bcrypt.hash(password, 10), role: role || 'admin', created_at: new Date().toISOString() });
-    writeJSON(usersFile, users);
-    addLog(req.session.user.username, `Создан администратор ${username} (${role})`, req);
+    const existing = await getQuery("SELECT * FROM admins WHERE username = ?", [username]);
+    if (existing) return res.status(400).json({ error: 'Пользователь уже существует' });
+    const hash = await bcrypt.hash(password, 10);
+    await runQuery("INSERT INTO admins (username, password_hash, role) VALUES (?, ?, ?)", [username, hash, role || 'admin']);
+    addLog(req.session.user.username, `Создан администратор ${username}`, req);
     res.json({ success: true });
 });
-app.post('/api/delete-admin', isAuthenticated, isSuperAdmin, (req, res) => {
-    const { id } = req.body;
+app.delete('/api/admins/:id', isAuthenticated, isSuperAdmin, async (req, res) => {
+    const id = parseInt(req.params.id);
     if (id === req.session.user.id) return res.status(400).json({ error: 'Нельзя удалить себя' });
-    let users = readJSON(usersFile);
-    const toDelete = users.find(u => u.id === id);
-    if (!toDelete) return res.status(404).json({ error: 'Не найден' });
-    users = users.filter(u => u.id !== id);
-    writeJSON(usersFile, users);
-    addLog(req.session.user.username, `Удалён администратор ${toDelete.username}`, req);
+    await runQuery("DELETE FROM admins WHERE id = ?", [id]);
+    addLog(req.session.user.username, `Удалён администратор id=${id}`, req);
     res.json({ success: true });
 });
-app.get('/api/logs', isAuthenticated, isSuperAdmin, (req, res) => res.json(readJSON(logsFile)));
-
-// ========== Основные данные ==========
-app.get('/api/tests', isAuthenticated, (req, res) => res.json(readJSON(testsFile)));
-app.post('/api/tests', isAuthenticated, (req, res) => { writeJSON(testsFile, req.body); res.json({ success: true }); });
-app.get('/api/users', isAuthenticated, (req, res) => res.json(readJSON(usersDataFile)));
-app.post('/api/users', isAuthenticated, (req, res) => { writeJSON(usersDataFile, req.body); res.json({ success: true }); });
-app.get('/api/tasks-base', isAuthenticated, (req, res) => res.json(readJSON(tasksBaseFile)));
-app.post('/api/tasks-base', isAuthenticated, (req, res) => { writeJSON(tasksBaseFile, req.body); res.json({ success: true }); });
-app.get('/api/sessions', isAuthenticated, (req, res) => res.json(readJSON(sessionsFile)));
-app.post('/api/sessions', isAuthenticated, (req, res) => { writeJSON(sessionsFile, req.body); res.json({ success: true }); });
-
-// ========== Экспорт/импорт ZIP ==========
-app.get('/api/export-all', isAuthenticated, (req, res) => {
-    const archive = archiver('zip', { zlib: { level: 9 } });
-    res.attachment('test_constructor_backup.zip');
-    archive.pipe(res);
-    archive.file(usersFile, { name: 'data/users.json' });
-    archive.file(logsFile, { name: 'data/logs.json' });
-    archive.file(testsFile, { name: 'data/tests.json' });
-    archive.file(tasksBaseFile, { name: 'data/tasks_base.json' });
-    archive.file(sessionsFile, { name: 'data/sessions.json' });
-    archive.file(usersDataFile, { name: 'data/users_data.json' });
-    archive.directory(uploadsDir, 'uploads');
-    archive.finalize().catch(err => { console.error(err); res.status(500).json({ error: 'Ошибка создания архива' }); });
+app.get('/api/logs', isAuthenticated, isSuperAdmin, async (req, res) => {
+    const logs = await allQuery("SELECT * FROM logs ORDER BY timestamp DESC LIMIT 500");
+    res.json(logs);
 });
-const multerZip = multer({ storage: multer.memoryStorage() });
-app.post('/api/import-all', isAuthenticated, multerZip.single('zip'), async (req, res) => {
-    if (!req.file) return res.status(400).json({ error: 'Файл не загружен' });
-    const JSZip = require('jszip');
-    try {
-        const zip = await JSZip.loadAsync(req.file.buffer);
-        // Восстановление JSON-файлов
-        const dataFolder = zip.folder('data');
-        if (dataFolder) {
-            const users = await dataFolder.file('users.json')?.async('string');
-            if (users) fs.writeFileSync(usersFile, users);
-            const logs = await dataFolder.file('logs.json')?.async('string');
-            if (logs) fs.writeFileSync(logsFile, logs);
-            const tests = await dataFolder.file('tests.json')?.async('string');
-            if (tests) fs.writeFileSync(testsFile, tests);
-            const tasks = await dataFolder.file('tasks_base.json')?.async('string');
-            if (tasks) fs.writeFileSync(tasksBaseFile, tasks);
-            const sessions = await dataFolder.file('sessions.json')?.async('string');
-            if (sessions) fs.writeFileSync(sessionsFile, sessions);
-            const usersData = await dataFolder.file('users_data.json')?.async('string');
-            if (usersData) fs.writeFileSync(usersDataFile, usersData);
+
+// ========== Группы ==========
+app.get('/api/groups', isAuthenticated, async (req, res) => {
+    const groups = await allQuery("SELECT id, name FROM groups");
+    res.json(groups);
+});
+app.post('/api/groups', isAuthenticated, async (req, res) => {
+    const { name } = req.body;
+    if (!name) return res.status(400).json({ error: 'Введите название' });
+    await runQuery("INSERT INTO groups (name) VALUES (?)", [name]);
+    res.json({ success: true });
+});
+app.put('/api/groups/:id', isAuthenticated, async (req, res) => {
+    const { name } = req.body;
+    await runQuery("UPDATE groups SET name = ? WHERE id = ?", [name, req.params.id]);
+    res.json({ success: true });
+});
+app.delete('/api/groups/:id', isAuthenticated, async (req, res) => {
+    await runQuery("DELETE FROM groups WHERE id = ?", [req.params.id]);
+    res.json({ success: true });
+});
+
+// ========== Пользователи (ученики) ==========
+app.get('/api/users', isAuthenticated, async (req, res) => {
+    const users = await allQuery("SELECT id, fullName, registrationNumber, groupName FROM users");
+    res.json(users);
+});
+app.post('/api/users', isAuthenticated, async (req, res) => {
+    const { fullName, registrationNumber, groupName } = req.body;
+    if (!fullName) return res.status(400).json({ error: 'Введите ФИО' });
+    let code = registrationNumber;
+    if (!code) {
+        // Генерация уникального 6-значного кода
+        let exists = true;
+        while (exists) {
+            code = Math.floor(100000 + Math.random() * 900000).toString();
+            const existing = await getQuery("SELECT * FROM users WHERE registrationNumber = ?", [code]);
+            exists = !!existing;
         }
-        const uploadsFolder = zip.folder('uploads');
-        if (uploadsFolder) {
-            // Очищаем папку uploads перед распаковкой
-            if (fs.existsSync(uploadsDir)) {
-                fs.readdirSync(uploadsDir).forEach(file => {
-                    const filePath = path.join(uploadsDir, file);
-                    if (fs.lstatSync(filePath).isFile()) fs.unlinkSync(filePath);
-                });
-            }
-            const files = Object.values(uploadsFolder.files);
-            for (const file of files) {
-                if (!file.dir) {
-                    const content = await file.async('nodebuffer');
-                    fs.writeFileSync(path.join(uploadsDir, file.name), content);
-                }
-            }
-        }
-        addLog(req.session.user.username, 'Импорт всех данных (ZIP)', req);
-        res.json({ success: true });
-    } catch (err) {
-        console.error(err);
-        res.status(500).json({ error: 'Ошибка при импорте: ' + err.message });
+    } else {
+        const existing = await getQuery("SELECT * FROM users WHERE registrationNumber = ?", [code]);
+        if (existing) return res.status(400).json({ error: 'Код уже существует' });
     }
+    const id = uuidv4();
+    await runQuery("INSERT INTO users (id, fullName, registrationNumber, groupName) VALUES (?, ?, ?, ?)", [id, fullName, code, groupName || null]);
+    res.json({ success: true, user: { id, fullName, registrationNumber: code, groupName } });
+});
+app.put('/api/users/:id', isAuthenticated, async (req, res) => {
+    const { fullName, registrationNumber, groupName } = req.body;
+    const existing = await getQuery("SELECT * FROM users WHERE registrationNumber = ? AND id != ?", [registrationNumber, req.params.id]);
+    if (existing) return res.status(400).json({ error: 'Код уже используется другим пользователем' });
+    await runQuery("UPDATE users SET fullName = ?, registrationNumber = ?, groupName = ? WHERE id = ?", [fullName, registrationNumber, groupName || null, req.params.id]);
+    res.json({ success: true });
+});
+app.delete('/api/users/:id', isAuthenticated, async (req, res) => {
+    await runQuery("DELETE FROM users WHERE id = ?", [req.params.id]);
+    res.json({ success: true });
+});
+
+// ========== Тесты ==========
+app.get('/api/tests', isAuthenticated, async (req, res) => {
+    const row = await getQuery("SELECT data FROM tests WHERE id = 'all_tests'");
+    res.json(row ? JSON.parse(row.data) : []);
+});
+app.post('/api/tests', isAuthenticated, async (req, res) => {
+    await runQuery("INSERT OR REPLACE INTO tests (id, data) VALUES (?, ?)", ['all_tests', JSON.stringify(req.body)]);
+    addLog(req.session.user.username, 'Сохранение тестов', req);
+    res.json({ success: true });
+});
+
+// ========== База заданий ==========
+app.get('/api/tasks-base', isAuthenticated, async (req, res) => {
+    const row = await getQuery("SELECT data FROM tasks_base WHERE id = 'all_tasks'");
+    res.json(row ? JSON.parse(row.data) : []);
+});
+app.post('/api/tasks-base', isAuthenticated, async (req, res) => {
+    await runQuery("INSERT OR REPLACE INTO tasks_base (id, data) VALUES (?, ?)", ['all_tasks', JSON.stringify(req.body)]);
+    res.json({ success: true });
 });
 
 // ========== Сессии учеников ==========
-app.post('/api/start-session', (req, res) => {
-    const { testId, studentRegNumber, studentName } = req.body;
-    const tests = readJSON(testsFile);
-    const test = tests.find(t => t.id === testId);
-    if (!test) return res.status(404).json({ error: 'Тест не найден' });
-    const student = (test.students || []).find(s => s.registrationNumber === studentRegNumber);
-    if (!student) return res.status(403).json({ error: 'Код участника не найден' });
-    const attemptsLimit = test.attemptsLimit !== undefined ? test.attemptsLimit : 0;
-    if (attemptsLimit > 0) {
-        const results = test.results || [];
-        const attemptsCount = results.filter(r => r.studentRegNumber === studentRegNumber).length;
-        if (attemptsCount >= attemptsLimit) return res.status(403).json({ error: `Превышен лимит попыток (${attemptsLimit})` });
-    }
-    const shuffledIds = [...(test.questions || [])].sort(() => Math.random() - 0.5).map(q => q.id);
-    if (test.instruction && test.instruction.blocks && test.instruction.blocks.length) shuffledIds.unshift('__INSTRUCTION__');
-    const endTime = Date.now() + (test.timeLimitMinutes || 60) * 60 * 1000;
-    const sessionId = uuidv4();
-    const sessions = readJSON(sessionsFile);
-    sessions.push({
-        id: sessionId, testId, studentRegNumber, studentName: student.fullName,
-        startTime: Date.now(), endTimestamp: endTime, questionsOrder: shuffledIds, currentIndex: 0, answers: {}
-    });
-    writeJSON(sessionsFile, sessions);
-    res.json({ sessionId, endTimestamp: endTime, questionsOrder: shuffledIds });
+app.get('/api/sessions', isAuthenticated, async (req, res) => {
+    const row = await getQuery("SELECT data FROM sessions WHERE id = 'all_sessions'");
+    res.json(row ? JSON.parse(row.data) : []);
+});
+app.post('/api/sessions', isAuthenticated, async (req, res) => {
+    await runQuery("INSERT OR REPLACE INTO sessions (id, data) VALUES (?, ?)", ['all_sessions', JSON.stringify(req.body)]);
+    res.json({ success: true });
 });
 
-app.get('/api/session/:sessionId', (req, res) => {
-    const sessions = readJSON(sessionsFile);
+// Старт сессии (без авторизации)
+app.post('/api/start-session', async (req, res) => {
+    const { testId, testLogin, studentCode } = req.body;
+    // Получаем тест
+    const testRow = await getQuery("SELECT data FROM tests WHERE id = 'all_tests'");
+    const tests = testRow ? JSON.parse(testRow.data) : [];
+    const test = tests.find(t => t.id === testId);
+    if (!test) return res.status(404).json({ error: 'Тест не найден' });
+    // Проверяем логин теста
+    if (test.testLogin !== testLogin) return res.status(403).json({ error: 'Неверный логин теста' });
+    // Проверяем ученика по коду
+    const student = await getQuery("SELECT * FROM users WHERE registrationNumber = ?", [studentCode]);
+    if (!student) return res.status(403).json({ error: 'Неверный код участника' });
+    // Проверяем, добавлен ли ученик в этот тест
+    const testStudents = test.students || [];
+    if (!testStudents.some(s => s.registrationNumber === studentCode)) {
+        return res.status(403).json({ error: 'Вы не добавлены в этот тест' });
+    }
+    // Лимит попыток
+    const attemptsLimit = test.attemptsLimit || 0;
+    if (attemptsLimit > 0) {
+        const results = test.results || [];
+        const attemptsCount = results.filter(r => r.studentRegNumber === studentCode).length;
+        if (attemptsCount >= attemptsLimit) {
+            return res.status(403).json({ error: `Превышен лимит попыток (${attemptsLimit})` });
+        }
+    }
+    // Формируем порядок вопросов
+    let questionsOrder = [...(test.questions || [])].sort(() => Math.random() - 0.5).map(q => q.id);
+    if (test.instruction && test.instruction.blocks && test.instruction.blocks.length) {
+        questionsOrder.unshift('__INSTRUCTION__');
+    }
+    const endTime = Date.now() + (test.timeLimitMinutes || 60) * 60 * 1000;
+    const sessionId = uuidv4();
+    const sessions = await getQuery("SELECT data FROM sessions WHERE id = 'all_sessions'") || { data: '[]' };
+    let sessionsList = JSON.parse(sessions.data);
+    sessionsList.push({
+        id: sessionId, testId, studentRegNumber: studentCode, studentName: student.fullName,
+        startTime: Date.now(), endTimestamp: endTime, questionsOrder, currentIndex: 0, answers: {}
+    });
+    await runQuery("INSERT OR REPLACE INTO sessions (id, data) VALUES (?, ?)", ['all_sessions', JSON.stringify(sessionsList)]);
+    res.json({ sessionId, endTimestamp: endTime, questionsOrder });
+});
+
+app.get('/api/session/:sessionId', async (req, res) => {
+    const sessionsRow = await getQuery("SELECT data FROM sessions WHERE id = 'all_sessions'");
+    const sessions = sessionsRow ? JSON.parse(sessionsRow.data) : [];
     const session = sessions.find(s => s.id === req.params.sessionId);
     if (!session) return res.status(404).json({ error: 'Сессия не найдена' });
     res.json(session);
 });
 
-app.post('/api/session/:sessionId', (req, res) => {
+app.post('/api/session/:sessionId', async (req, res) => {
     const { answers, currentIndex } = req.body;
-    const sessions = readJSON(sessionsFile);
+    const sessionsRow = await getQuery("SELECT data FROM sessions WHERE id = 'all_sessions'");
+    let sessions = sessionsRow ? JSON.parse(sessionsRow.data) : [];
     const idx = sessions.findIndex(s => s.id === req.params.sessionId);
     if (idx === -1) return res.status(404).json({ error: 'Сессия не найдена' });
     if (answers) sessions[idx].answers = { ...sessions[idx].answers, ...answers };
     if (currentIndex !== undefined) sessions[idx].currentIndex = currentIndex;
-    writeJSON(sessionsFile, sessions);
+    await runQuery("INSERT OR REPLACE INTO sessions (id, data) VALUES (?, ?)", ['all_sessions', JSON.stringify(sessions)]);
     res.json({ success: true });
 });
 
-app.post('/api/finish-session/:sessionId', (req, res) => {
-    const sessions = readJSON(sessionsFile);
+app.post('/api/finish-session/:sessionId', async (req, res) => {
+    const sessionsRow = await getQuery("SELECT data FROM sessions WHERE id = 'all_sessions'");
+    let sessions = sessionsRow ? JSON.parse(sessionsRow.data) : [];
     const idx = sessions.findIndex(s => s.id === req.params.sessionId);
     if (idx === -1) return res.status(404).json({ error: 'Сессия не найдена' });
     const session = sessions[idx];
-    const tests = readJSON(testsFile);
+    // Сохраняем результат в тест
+    const testsRow = await getQuery("SELECT data FROM tests WHERE id = 'all_tests'");
+    let tests = testsRow ? JSON.parse(testsRow.data) : [];
     const testIdx = tests.findIndex(t => t.id === session.testId);
     if (testIdx !== -1) {
         if (!tests[testIdx].results) tests[testIdx].results = [];
@@ -258,10 +349,10 @@ app.post('/api/finish-session/:sessionId', (req, res) => {
             finishedAt: Date.now(),
             answers: Object.entries(session.answers).map(([qid, ans]) => ({ questionId: qid, answerText: ans.text, files: ans.files || [] }))
         });
-        writeJSON(testsFile, tests);
+        await runQuery("INSERT OR REPLACE INTO tests (id, data) VALUES (?, ?)", ['all_tests', JSON.stringify(tests)]);
     }
     sessions.splice(idx, 1);
-    writeJSON(sessionsFile, sessions);
+    await runQuery("INSERT OR REPLACE INTO sessions (id, data) VALUES (?, ?)", ['all_sessions', JSON.stringify(sessions)]);
     res.json({ success: true });
 });
 
@@ -279,6 +370,18 @@ app.get('/api/uploads/:filename', (req, res) => {
     const filePath = path.join(uploadsDir, req.params.filename);
     if (fs.existsSync(filePath)) res.sendFile(filePath);
     else res.status(404).json({ error: 'Файл не найден' });
+});
+
+// Экспорт / импорт всей БД
+app.get('/api/export-db', isAuthenticated, (req, res) => {
+    res.download(dbPath, 'test_constructor.db');
+});
+const uploadDb = multer({ storage: multer.memoryStorage() });
+app.post('/api/import-db', isAuthenticated, uploadDb.single('db'), async (req, res) => {
+    if (!req.file) return res.status(400).json({ error: 'Файл не загружен' });
+    fs.writeFileSync(dbPath, req.file.buffer);
+    addLog(req.session.user.username, 'Импорт базы данных', req);
+    res.json({ success: true });
 });
 
 app.listen(PORT, '0.0.0.0', () => {
