@@ -45,7 +45,6 @@
         <div class="form-group"><label>Текст вопроса (можно вставить изображения)</label><div class="editor-wrapper"><div id="editorjs"></div></div><div class="info-tip">Для вставки изображения нажмите на плюс и выберите "Изображение"</div></div>
         <div class="checkbox-group"><input type="checkbox" id="requireFileAttachment"><label>Требуется прикрепление файлов учеником</label></div>
         
-        <!-- Блок дополнительных файлов для вопроса -->
         <div class="file-attachments">
             <label>Дополнительные файлы (ученик сможет скачать)</label>
             <div id="attachmentsList"></div>
@@ -76,16 +75,16 @@
         const params=new URLSearchParams(location.search);
         currentTestId=params.get('testId');
         const modeOrQid=params.get('questionId'), isNew=params.get('mode')==='new';
-        if(!currentTestId){alert('Тест не указан');location.href='index.html';return;}
+        if(!currentTestId){showToast('Тест не указан',true);location.href='index.html';return;}
         const tests=await fetchTests();
         const test=tests.find(t=>t.id===currentTestId);
-        if(!test){alert('Тест не найден');location.href='index.html';return;}
+        if(!test){showToast('Тест не найден',true);location.href='index.html';return;}
         document.getElementById('backLink').href=`questions.html?testId=${currentTestId}`;
         if(!isNew && modeOrQid && modeOrQid!=='null'){
             currentQuestionId=modeOrQid;
             const q=test.questions?.find(qq=>qq.id===currentQuestionId);
             if(q){loadQuestionData(q);document.getElementById('formTitle').innerText='Редактирование вопроса';}
-            else{alert('Вопрос не найден');currentQuestionId=null;}
+            else{showToast('Вопрос не найден',true);currentQuestionId=null;}
         }
         if(!currentQuestionId){document.getElementById('formTitle').innerText='Новый вопрос';resetForm();}
         await initEditor();
