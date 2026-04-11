@@ -46,15 +46,7 @@
     <div class="card"><h2>Результаты прохождения</h2><div class="group-selector"><label>Фильтр по группе:</label><select id="resultGroupFilter"></select></div><div id="resultsList"></div></div>
 </div>
 
-<!-- Модальное окно редактирования инструкции -->
-<div id="instructionModal" class="modal">
-    <div class="modal-content">
-        <h3>Редактирование инструкции к тесту</h3>
-        <div class="editor-wrapper"><div id="instructionEditor"></div></div>
-        <div class="modal-buttons" style="margin-top:1rem;"><button id="cancelInstructionBtn" class="btn">Отмена</button><button id="saveInstructionBtn" class="btn btn-primary">Сохранить инструкцию</button></div>
-    </div>
-</div>
-
+<div id="instructionModal" class="modal"><div class="modal-content"><h3>Редактирование инструкции к тесту</h3><div class="editor-wrapper"><div id="instructionEditor"></div></div><div class="modal-buttons" style="margin-top:1rem;"><button id="cancelInstructionBtn" class="btn">Отмена</button><button id="saveInstructionBtn" class="btn btn-primary">Сохранить инструкцию</button></div></div></div>
 <div id="answersModal" class="modal"><div class="modal-content"><h3>Детали результата</h3><div id="modalAnswers"></div><button id="closeModalBtn" class="btn">Закрыть</button></div></div>
 <div id="reevaluateModal" class="modal"><div class="modal-content"><h3>Ручное переоценивание</h3><div id="reevaluateList"></div><button id="saveReevalBtn" class="btn btn-primary">Сохранить изменения</button><button id="cancelReevalBtn" class="btn">Отмена</button></div></div>
 
@@ -102,12 +94,8 @@
             data: currentTest.instruction || { blocks: [] }
         });
     }
-    document.getElementById('editInstructionBtn').onclick = () => {
-        document.getElementById('instructionModal').style.display = 'flex';
-    };
-    document.getElementById('cancelInstructionBtn').onclick = () => {
-        document.getElementById('instructionModal').style.display = 'none';
-    };
+    document.getElementById('editInstructionBtn').onclick = () => { document.getElementById('instructionModal').style.display = 'flex'; };
+    document.getElementById('cancelInstructionBtn').onclick = () => { document.getElementById('instructionModal').style.display = 'none'; };
     document.getElementById('saveInstructionBtn').onclick = async () => {
         const savedData = await instructionEditor.save();
         let tests = await fetchTests();
@@ -118,9 +106,7 @@
             currentTest = tests[idx];
             showToast('Инструкция сохранена');
             document.getElementById('instructionModal').style.display = 'none';
-        } else {
-            showToast('Ошибка сохранения', true);
-        }
+        } else { showToast('Ошибка сохранения', true); }
     };
     function renderStudents(){
         const tbody=document.getElementById('studentsTbody');
@@ -180,10 +166,12 @@
             const correctOptions=(q.answerOptions||[]).filter((_,idx)=>correctIndices.includes(idx)).join(', ');
             const isCorrect=userAns?.isCorrectOverride!==undefined?userAns.isCorrectOverride:isAnswerCorrect(q,userAns?.answerText);
             const statusClass=isCorrect?'correct':'incorrect';
-            const statusText=isCorrect?`Правильно (+${points} балл${points!==1?'а':''})`:`Неправильно (0 баллов)`;
+            const statusText=isCorrect?`Правильно (+${points})`:`Неправильно (0)`;
             html+=`<div class="question-detail"><strong>Вопрос ${i+1}: ${escapeHtml(q.titleQuestion)} (${points} балл.)</strong><br>Ответ: ${escapeHtml(userAnswerText)}<br>Правильный: ${escapeHtml(correctOptions)}<br><span class="${statusClass}">${statusText}</span>`;
-            if(userAns?.files?.length) html+=`<div><strong>Файлы ученика:</strong> ${userAns.files.map(f=>`<a href="${f.dataURL}" download="${f.name}" target="_blank" class="file-link">📎 ${escapeHtml(f.name)}</a>`).join(' ')}</div>`;
-            if(q.attachments && q.attachments.length) html+=`<div><strong>Дополнительные файлы:</strong> ${q.attachments.map(f=>`<a href="${f.url}" download="${f.name}" target="_blank" class="file-link">📎 ${escapeHtml(f.name)}</a>`).join(' ')}</div>`;
+            // Показываем только файлы, прикреплённые учеником, не дополнительные
+            if(userAns?.files && userAns.files.length){
+                html+=`<div><strong>Прикреплённые файлы ученика:</strong> ${userAns.files.map(f=>`<a href="${f.dataURL}" download="${f.name}" target="_blank" class="file-link">${escapeHtml(f.name)}</a>`).join(' ')}</div>`;
+            }
             html+=`</div>`;
         }
         container.innerHTML=html; modal.style.display='flex';
