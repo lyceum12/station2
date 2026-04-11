@@ -11,7 +11,6 @@ const { v4: uuidv4 } = require('uuid');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Middleware
 app.use(cors({ origin: true, credentials: true }));
 app.use(express.json({ limit: '50mb' }));
 app.use(express.static('public'));
@@ -22,19 +21,15 @@ app.use(session({
     cookie: { secure: false, httpOnly: true, maxAge: 1000 * 60 * 60 * 24 }
 }));
 
-// Папки
 const dataDir = path.join(__dirname, 'data');
 const uploadsDir = path.join(__dirname, 'uploads');
 if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir);
 if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir);
 
-// SQLite база данных
 const dbPath = path.join(dataDir, 'test_constructor.db');
 const db = new sqlite3.Database(dbPath);
 
-// Инициализация таблиц
 db.serialize(() => {
-    // Администраторы
     db.run(`CREATE TABLE IF NOT EXISTS admins (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         username TEXT UNIQUE,
@@ -42,7 +37,6 @@ db.serialize(() => {
         role TEXT DEFAULT 'admin',
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )`);
-    // Логи
     db.run(`CREATE TABLE IF NOT EXISTS logs (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         username TEXT,
@@ -50,35 +44,29 @@ db.serialize(() => {
         ip TEXT,
         timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
     )`);
-    // Тесты (хранятся как JSON)
     db.run(`CREATE TABLE IF NOT EXISTS tests (
         id TEXT PRIMARY KEY,
         data TEXT
     )`);
-    // Пользователи (ученики) с группами
     db.run(`CREATE TABLE IF NOT EXISTS users (
         id TEXT PRIMARY KEY,
         fullName TEXT,
         registrationNumber TEXT UNIQUE,
         groupName TEXT
     )`);
-    // Группы
     db.run(`CREATE TABLE IF NOT EXISTS groups (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         name TEXT UNIQUE
     )`);
-    // База заданий
     db.run(`CREATE TABLE IF NOT EXISTS tasks_base (
         id TEXT PRIMARY KEY,
         data TEXT
     )`);
-    // Активные сессии учеников
     db.run(`CREATE TABLE IF NOT EXISTS sessions (
         id TEXT PRIMARY KEY,
         data TEXT
     )`);
     
-    // Создание главного админа, если нет
     db.get("SELECT * FROM admins WHERE username = 'admin'", async (err, row) => {
         if (!row) {
             const hash = await bcrypt.hash('admin', 10);
@@ -88,7 +76,6 @@ db.serialize(() => {
     });
 });
 
-// Вспомогательные функции
 function runQuery(sql, params = []) {
     return new Promise((resolve, reject) => {
         db.run(sql, params, function(err) { if (err) reject(err); else resolve(this); });
@@ -105,13 +92,11 @@ function allQuery(sql, params = []) {
     });
 }
 
-// Логирование
 function addLog(username, action, req) {
     const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'unknown';
     runQuery("INSERT INTO logs (username, action, ip) VALUES (?, ?, ?)", [username, action, ip]).catch(console.error);
 }
 
-// Middleware проверки авторизации
 async function isAuthenticated(req, res, next) {
     if (req.session.user) return next();
     res.status(401).json({ error: 'Не авторизован' });
@@ -156,7 +141,7 @@ app.post('/api/change-password', isAuthenticated, async (req, res) => {
     res.json({ success: true });
 });
 
-// ========== Управление администраторами (только super_admin) ==========
+// ========== Администраторы ==========
 app.get('/api/admins-list', isAuthenticated, isSuperAdmin, async (req, res) => {
     const admins = await allQuery("SELECT id, username, role, created_at FROM admins");
     res.json(admins);
@@ -188,7 +173,7 @@ app.get('/api/logs', isAuthenticated, isSuperAdmin, async (req, res) => {
     res.json(logs);
 });
 
-// ========== API для тестов ==========
+// ========== Тесты ==========
 app.get('/api/tests', isAuthenticated, async (req, res) => {
     const row = await getQuery("SELECT data FROM tests WHERE id = 'all_tests'");
     res.json(row ? JSON.parse(row.data) : []);
@@ -200,30 +185,33 @@ app.post('/api/tests', isAuthenticated, async (req, res) => {
     res.json({ success: true });
 });
 
-// ========== API для пользователей (ученики и группы) ==========
+// ========== Пользователи (ученики) и группы ==========
 app.get('/api/users', isAuthenticated, async (req, res) => {
     const groups = await allQuery("SELECT name FROM groups");
     const users = await allQuery("SELECT id, fullName, registrationNumber, groupName FROM users");
     res.json({ groups: groups.map(g => ({ name: g.name })), users });
 });
+
 app.post('/api/users', isAuthenticated, async (req, res) => {
     const { groups, users } = req.body;
-    // Обновляем группы
+    // Обновляем группы (удаляем старые и вставляем новые, игнорируя дубликаты)
     await runQuery("DELETE FROM groups");
     for (const g of groups) {
-        await runQuery("INSERT INTO groups (name) VALUES (?)", [g.name]);
+        try {
+            await runQuery("INSERT INTO groups (name) VALUES (?)", [g.name]);
+        } catch(e) { /* игнорируем дубликаты */ }
     }
     // Обновляем пользователей
     await runQuery("DELETE FROM users");
     for (const u of users) {
         await runQuery("INSERT INTO users (id, fullName, registrationNumber, groupName) VALUES (?, ?, ?, ?)", 
-            [u.id, u.fullName, u.registrationNumber, u.groupName]);
+            [u.id, u.fullName, u.registrationNumber, u.groupName || null]);
     }
     addLog(req.session.user.username, 'Сохранение пользователей', req);
     res.json({ success: true });
 });
 
-// ========== API для базы заданий ==========
+// ========== База заданий ==========
 app.get('/api/tasks-base', isAuthenticated, async (req, res) => {
     const row = await getQuery("SELECT data FROM tasks_base WHERE id = 'all_tasks'");
     res.json(row ? JSON.parse(row.data) : []);
@@ -246,7 +234,6 @@ app.post('/api/sessions', isAuthenticated, async (req, res) => {
     res.json({ success: true });
 });
 
-// Старт сессии учеником (без авторизации)
 app.post('/api/start-session', async (req, res) => {
     const { testId, studentCode, studentName } = req.body;
     const testsRow = await getQuery("SELECT data FROM tests WHERE id = 'all_tests'");
@@ -334,7 +321,7 @@ app.get('/api/uploads/:filename', (req, res) => {
     else res.status(404).json({ error: 'Файл не найден' });
 });
 
-// ========== Экспорт / импорт всей БД в файл .db ==========
+// ========== Экспорт / импорт .db ==========
 app.get('/api/export-db', isAuthenticated, (req, res) => {
     res.download(dbPath, 'test_constructor.db');
 });
@@ -343,12 +330,10 @@ app.post('/api/import-db', isAuthenticated, multerDb.single('db'), async (req, r
     if (!req.file) return res.status(400).json({ error: 'Файл не загружен' });
     const newDbPath = dbPath + '.new';
     fs.writeFileSync(newDbPath, req.file.buffer);
-    // Закрываем текущее соединение и заменяем файл
     db.close(() => {
         fs.renameSync(newDbPath, dbPath);
         addLog(req.session.user.username, 'Импорт базы данных', req);
         res.json({ success: true });
-        // Перезапуск сервера не требуется, но лучше перезагрузить страницу
     });
 });
 
