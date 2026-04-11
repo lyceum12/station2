@@ -49,37 +49,24 @@
 <script>
     let currentSessionId=null, currentTest=null, questionsOrder=[], currentIndex=0, timerInterval=null, finished=false, sessionAnswers={};
     function showToast(msg, isError=false){const t=document.createElement('div');t.className='toast'+(isError?' error':'');t.textContent=msg;document.body.appendChild(t);setTimeout(()=>t.remove(),3000);}
-    async function fetchTests(){const r=await fetch('/api/tests');return r.json();}
-    async function getSessions(){const r=await fetch('/api/sessions');return r.json();}
-    async function saveSessions(s){await fetch('/api/sessions',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(s)});}
-    async function startSession(testId, testLogin, studentCode, studentName){
-        let sessions=await getSessions();
-        const tests=await fetchTests();
-        const test=tests.find(t=>t.id===testId);
-        if(!test) throw new Error('Тест не найден');
-        const student = (test.students || []).find(s => s.registrationNumber === studentCode && s.testLogin === testLogin);
-        if(!student) throw new Error('Неверный логин или код участника');
-        const attemptsLimit = test.attemptsLimit !== undefined ? test.attemptsLimit : 0;
-        if(attemptsLimit > 0){
-            const results = test.results || [];
-            const attemptsCount = results.filter(r => r.studentRegNumber === studentCode).length;
-            if(attemptsCount >= attemptsLimit) throw new Error(`Превышен лимит попыток (${attemptsLimit})`);
-        }
-        const shuffledIds = [...(test.questions || [])].sort(() => Math.random() - 0.5).map(q => q.id);
-        if(test.instruction && test.instruction.blocks && test.instruction.blocks.length) shuffledIds.unshift('__INSTRUCTION__');
-        const endTime = Date.now() + (test.timeLimitMinutes || 60) * 60 * 1000;
-        const sessionId = 'sess_'+Date.now()+'_'+Math.random().toString(36).substr(2,8);
-        const session = { id:sessionId, testId, studentRegNumber:studentCode, studentName:student.fullName, startTime:Date.now(), endTimestamp:endTime, questionsOrder:shuffledIds, currentIndex:0, answers:{} };
-        sessions.push(session);
-        await saveSessions(sessions);
-        return { sessionId, endTimestamp:endTime, questionsOrder:shuffledIds };
+    async function fetchJson(url, options={}) {
+        const res = await fetch(url, {...options, headers:{'Content-Type':'application/json'}, credentials:'include'});
+        if(!res.ok) throw new Error(await res.text());
+        return res.json();
+    }
+    async function getSessions(){ const r=await fetch('/api/sessions',{credentials:'include'}); return r.json(); }
+    async function saveSessions(s){ await fetch('/api/sessions',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(s),credentials:'include'}); }
+    async function startSession(testId, testLogin, studentCode){
+        const res = await fetch('/api/start-session', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({testId, testLogin, studentCode}), credentials:'include' });
+        if(!res.ok) throw new Error((await res.json()).error);
+        return await res.json();
     }
     async function loadSession(){
         const sid=localStorage.getItem('quiz_session_id');
         if(!sid) return null;
         const sessions=await getSessions();
         const session=sessions.find(s=>s.id===sid);
-        if(!session){localStorage.removeItem('quiz_session_id');return null;}
+        if(!session){ localStorage.removeItem('quiz_session_id'); return null; }
         return session;
     }
     async function updateSession(answers, idx){
@@ -103,9 +90,9 @@
         try{
             const session=await loadSession();
             if(session){
-                const tests=await fetchTests();
+                const tests=await fetchJson('/api/tests');
                 currentTest=tests.find(t=>t.id===session.testId);
-                if(!currentTest){localStorage.removeItem('quiz_session_id');showLogin();return;}
+                if(!currentTest){ localStorage.removeItem('quiz_session_id'); showLogin(); return; }
                 // Обновляем порядок вопросов и время
                 const newOrder = [...(currentTest.questions || [])].sort(() => Math.random() - 0.5).map(q => q.id);
                 if(currentTest.instruction && currentTest.instruction.blocks && currentTest.instruction.blocks.length) newOrder.unshift('__INSTRUCTION__');
@@ -145,14 +132,14 @@
                 renderNav();
                 updateCounter();
             } else showLogin();
-        } catch(e){console.error(e);showLogin();}
+        } catch(e){ console.error(e); showLogin(); }
     }
     function showLogin(){
         document.getElementById('appWindow').innerHTML=`
             <div class="login-overlay" id="loginOverlay">
                 <div class="login-card">
                     <h2>Вход в тестирование</h2>
-                    <input type="text" id="testLogin" placeholder="Логин (номер теста)">
+                    <input type="text" id="testLogin" placeholder="Логин теста">
                     <input type="text" id="studentCode" placeholder="Код участника">
                     <button id="loginBtn" style="background:#1E325A;color:white;padding:0.6rem 2rem;border:none;border-radius:40px;">Войти</button>
                     <div id="loginError" class="error-msg"></div>
@@ -162,30 +149,32 @@
         document.getElementById('loginBtn').onclick=async()=>{
             const login = document.getElementById('testLogin').value.trim();
             const code = document.getElementById('studentCode').value.trim();
-            if(!login || !code){document.getElementById('loginError').innerText='Заполните оба поля';return;}
-            const tests=await fetchTests();
-            let foundTest=null, foundStudent=null;
-            for(let t of tests){
-                const s=(t.students||[]).find(st=>st.testLogin===login && st.registrationNumber===code);
-                if(s){foundTest=t;foundStudent=s;break;}
-            }
-            if(!foundTest){document.getElementById('loginError').innerText='Неверный логин или код участника';return;}
+            if(!login || !code){ document.getElementById('loginError').innerText='Заполните оба поля'; return; }
             try{
-                const data=await startSession(foundTest.id, login, code, foundStudent.fullName);
-                currentTest=foundTest;
-                questionsOrder=data.questionsOrder;
-                currentIndex=0;
-                currentSessionId=data.sessionId;
-                sessionAnswers={};
-                localStorage.setItem('quiz_session_id',currentSessionId);
-                localStorage.setItem('quiz_session_student_reg',code);
-                localStorage.setItem('quiz_session_student_name',foundStudent.fullName);
+                const tests = await fetchJson('/api/tests');
+                let foundTest = null;
+                for(let t of tests){
+                    if(t.testLogin === login){
+                        foundTest = t;
+                        break;
+                    }
+                }
+                if(!foundTest){ document.getElementById('loginError').innerText='Неверный логин теста'; return; }
+                const data = await startSession(foundTest.id, login, code);
+                currentTest = foundTest;
+                questionsOrder = data.questionsOrder;
+                currentIndex = 0;
+                currentSessionId = data.sessionId;
+                sessionAnswers = {};
+                localStorage.setItem('quiz_session_id', currentSessionId);
+                localStorage.setItem('quiz_session_student_reg', code);
+                localStorage.setItem('quiz_session_student_name', (foundTest.students||[]).find(s=>s.registrationNumber===code)?.fullName || '');
                 buildUI();
                 startTimer(data.endTimestamp);
                 await renderCurrentQuestion();
                 renderNav();
                 updateCounter();
-            } catch(e){document.getElementById('loginError').innerText=e.message;}
+            } catch(e){ document.getElementById('loginError').innerText = e.message; }
         };
     }
     function buildUI(){
@@ -351,7 +340,7 @@
             const ans=sessionAnswers[qid]||{text:'',files:[]};
             answersArray.push({questionId:qid,answerText:ans.text,files:ans.files});
         }
-        let tests=await fetchTests();
+        let tests=await fetchJson('/api/tests');
         const testIdx=tests.findIndex(t=>t.id===currentTest.id);
         if(testIdx!==-1){
             const result={
@@ -362,7 +351,7 @@
             };
             if(!tests[testIdx].results) tests[testIdx].results=[];
             tests[testIdx].results.push(result);
-            await fetch('/api/tests',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(tests)});
+            await fetchJson('/api/tests',{method:'POST',body:JSON.stringify(tests)});
         }
         await finishSession();
         finished=true;
