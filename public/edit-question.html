@@ -27,6 +27,9 @@
         .btn-save{background:#3b82f6;color:white;border:none;padding:0.8rem 2rem;border-radius:40px;font-weight:600;cursor:pointer;}
         .btn-cancel{background:white;border:1px solid #cbd5e1;padding:0.8rem 2rem;border-radius:40px;cursor:pointer;}
         .info-tip{font-size:0.75rem;color:#475569;margin-top:6px;}
+        .file-attachments{margin-top:1rem;border-top:1px solid #e2e8f0;padding-top:1rem;}
+        .file-item{display:flex;align-items:center;gap:10px;background:#f8fafc;padding:0.5rem;border-radius:20px;margin-bottom:8px;}
+        .file-name{flex:1;font-size:0.9rem;}
         .toast{position:fixed;bottom:20px;right:20px;background:#10b981;color:white;padding:12px 20px;border-radius:40px;z-index:1000;animation:fadein 0.3s;}
         .toast.error{background:#ef4444;}
         @keyframes fadein{from{opacity:0;transform:translateX(100%);}to{opacity:1;transform:translateX(0);}}
@@ -40,35 +43,55 @@
         <div class="form-group"><label>Заголовок вопроса</label><input type="text" id="questionTitle"></div>
         <div class="form-group"><label>Баллы за вопрос</label><input type="number" id="questionPoints" value="1" min="0.5" step="0.5"></div>
         <div class="form-group"><label>Текст вопроса (можно вставить изображения)</label><div class="editor-wrapper"><div id="editorjs"></div></div><div class="info-tip">Для вставки изображения нажмите на плюс и выберите "Изображение"</div></div>
-        <div class="checkbox-group"><input type="checkbox" id="requireFileAttachment"><label>Требуется прикрепление файлов к этому вопросу</label></div>
+        <div class="checkbox-group"><input type="checkbox" id="requireFileAttachment"><label>Требуется прикрепление файлов учеником</label></div>
+        
+        <!-- Блок дополнительных файлов для вопроса -->
+        <div class="file-attachments">
+            <label>Дополнительные файлы (ученик сможет скачать)</label>
+            <div id="attachmentsList"></div>
+            <button type="button" id="addAttachmentBtn" class="add-answer">+ Добавить файл</button>
+            <div class="info-tip">Файлы будут доступны ученику при ответе на вопрос</div>
+        </div>
+        
         <div class="answers-section"><label>Варианты ответов (отметьте правильные)</label><div id="answersList"></div><button type="button" id="addAnswerBtn" class="add-answer">+ Добавить вариант ответа</button></div>
         <div class="action-buttons"><button type="button" id="cancelBtn" class="btn-cancel">Отмена</button><button type="button" id="saveQuestionBtn" class="btn-save">Сохранить вопрос</button></div>
     </div>
 </div>
+
 <script>
     let editorInstance=null, currentTestId=null, currentQuestionId=null, currentAnswers=[];
+    let currentAttachments = []; // { name, url }
     function showToast(msg, isError=false){const t=document.createElement('div');t.className='toast'+(isError?' error':'');t.textContent=msg;document.body.appendChild(t);setTimeout(()=>t.remove(),3000);}
     async function fetchTests(){const r=await fetch('/api/tests');return r.json();}
     async function saveTests(t){await fetch('/api/tests',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(t)});}
+    async function uploadFile(file){
+        const formData = new FormData();
+        formData.append('file', file);
+        const res = await fetch('/api/upload-file', { method: 'POST', body: formData });
+        if(!res.ok) throw new Error('Ошибка загрузки файла');
+        const data = await res.json();
+        return { name: data.originalName, url: `/api/uploads/${data.fileName}` };
+    }
     async function init(){
         const params=new URLSearchParams(location.search);
         currentTestId=params.get('testId');
         const modeOrQid=params.get('questionId'), isNew=params.get('mode')==='new';
-        if(!currentTestId){showToast('Тест не указан',true);location.href='index.html';return;}
+        if(!currentTestId){alert('Тест не указан');location.href='index.html';return;}
         const tests=await fetchTests();
         const test=tests.find(t=>t.id===currentTestId);
-        if(!test){showToast('Тест не найден',true);location.href='index.html';return;}
+        if(!test){alert('Тест не найден');location.href='index.html';return;}
         document.getElementById('backLink').href=`questions.html?testId=${currentTestId}`;
         if(!isNew && modeOrQid && modeOrQid!=='null'){
             currentQuestionId=modeOrQid;
             const q=test.questions?.find(qq=>qq.id===currentQuestionId);
             if(q){loadQuestionData(q);document.getElementById('formTitle').innerText='Редактирование вопроса';}
-            else{showToast('Вопрос не найден',true);currentQuestionId=null;}
+            else{alert('Вопрос не найден');currentQuestionId=null;}
         }
         if(!currentQuestionId){document.getElementById('formTitle').innerText='Новый вопрос';resetForm();}
         await initEditor();
         if(window.pendingEditorData){await editorInstance.render(window.pendingEditorData);delete window.pendingEditorData;}
         renderAnswersUI();
+        renderAttachmentsUI();
     }
     function loadQuestionData(q){
         document.getElementById('questionTitle').value=q.titleQuestion||'';
@@ -77,10 +100,12 @@
         if(q.editorData && editorInstance) editorInstance.render(q.editorData);
         else if(q.editorData) window.pendingEditorData=q.editorData;
         currentAnswers=q.answers?[...q.answers]:[];
+        currentAttachments = q.attachments ? [...q.attachments] : [];
     }
     function resetForm(){
         if(editorInstance) editorInstance.clear();
         currentAnswers=[];renderAnswersUI();
+        currentAttachments=[];renderAttachmentsUI();
         document.getElementById('questionTitle').value='';
         document.getElementById('questionPoints').value=1;
         document.getElementById('requireFileAttachment').checked=false;
@@ -92,6 +117,12 @@
         document.querySelectorAll('.answer-correct').forEach(cb=>cb.addEventListener('change',e=>{const idx=parseInt(cb.dataset.idx);if(currentAnswers[idx])currentAnswers[idx].isCorrect=cb.checked;}));
         document.querySelectorAll('.answer-text').forEach(inp=>inp.addEventListener('input',e=>{const idx=parseInt(inp.dataset.idx);if(currentAnswers[idx])currentAnswers[idx].text=inp.value;}));
         document.querySelectorAll('.remove-answer').forEach(btn=>btn.addEventListener('click',e=>{const idx=parseInt(btn.dataset.idx);currentAnswers.splice(idx,1);renderAnswersUI();}));
+    }
+    function renderAttachmentsUI(){
+        const container=document.getElementById('attachmentsList');
+        if(!currentAttachments.length){container.innerHTML='<div style="padding:0.5rem;color:#94a3b8;">Нет дополнительных файлов</div>';return;}
+        container.innerHTML=currentAttachments.map((f,idx)=>`<div class="file-item"><span class="file-name">📎 ${escapeHtml(f.name)}</span><button class="btn-icon remove-attachment" data-idx="${idx}" style="background:none;border:none;cursor:pointer;">🗑️</button></div>`).join('');
+        document.querySelectorAll('.remove-attachment').forEach(btn=>btn.addEventListener('click',e=>{const idx=parseInt(btn.dataset.idx);currentAttachments.splice(idx,1);renderAttachmentsUI();}));
     }
     async function initEditor(){
         class CustomImage{
@@ -125,6 +156,22 @@
         const tools={header:{class:window.Header,config:{placeholder:"Введите заголовок..."}},list:{class:window.EditorjsList,inlineToolbar:true},paragraph:{class:window.Paragraph,inlineToolbar:true},image:{class:CustomImage}};
         editorInstance=new window.EditorJS({holder:"editorjs",tools,placeholder:"Текст вопроса...",data:{}});
     }
+    document.getElementById('addAttachmentBtn').addEventListener('click', async () => {
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.onchange = async (e) => {
+            const file = e.target.files[0];
+            if(file){
+                try {
+                    const uploaded = await uploadFile(file);
+                    currentAttachments.push(uploaded);
+                    renderAttachmentsUI();
+                    showToast(`Файл "${uploaded.name}" добавлен`);
+                } catch(err) { showToast(err.message, true); }
+            }
+        };
+        input.click();
+    });
     async function saveQuestion(){
         const title=document.getElementById('questionTitle').value.trim();
         if(!title){showToast('Укажите заголовок',true);return;}
@@ -132,9 +179,20 @@
         if(currentAnswers.some(a=>!a.text.trim())){showToast('Все варианты должны содержать текст',true);return;}
         if(!currentAnswers.some(a=>a.isCorrect)){showToast('Выберите хотя бы один правильный ответ',true);return;}
         let editorData=editorInstance?await editorInstance.save():{blocks:[]};
-        const points=parseFloat(document.getElementById('questionPoints').value);
-        if(isNaN(points)||points<=0){showToast('Укажите корректное количество баллов (число >0)',true);return;}
-        const newQuestion={id:currentQuestionId||('q_'+Date.now()+'_'+Math.random().toString(36).substr(2,6)),titleQuestion:title,points:points,editorData,answers:currentAnswers.map(a=>({text:a.text,isCorrect:a.isCorrect})),answerOptions:currentAnswers.map(a=>a.text),correctIndices:currentAnswers.reduce((arr,a,idx)=>{if(a.isCorrect)arr.push(idx);return arr},[]),requireFileAttachment:document.getElementById('requireFileAttachment').checked,hasEditorContent:true};
+        const points = parseFloat(document.getElementById('questionPoints').value);
+        if(isNaN(points) || points <= 0) { showToast('Укажите корректное количество баллов',true); return; }
+        const newQuestion={
+            id:currentQuestionId||('q_'+Date.now()+'_'+Math.random().toString(36).substr(2,6)),
+            titleQuestion:title,
+            points:points,
+            editorData,
+            answers:currentAnswers.map(a=>({text:a.text,isCorrect:a.isCorrect})),
+            answerOptions:currentAnswers.map(a=>a.text),
+            correctIndices:currentAnswers.reduce((arr,a,idx)=>{if(a.isCorrect)arr.push(idx);return arr},[]),
+            requireFileAttachment:document.getElementById('requireFileAttachment').checked,
+            attachments: currentAttachments,
+            hasEditorContent:true
+        };
         let tests=await fetchTests();
         const testIdx=tests.findIndex(t=>t.id===currentTestId);
         if(testIdx===-1){showToast('Тест не найден',true);return;}
