@@ -34,9 +34,7 @@
         .modal-content input{width:100%;padding:0.8rem;margin:1rem 0;border:1px solid #cbd5e1;border-radius:40px;}
         .task-item{border:1px solid #e2e8f0;border-radius:16px;padding:0.8rem;margin-bottom:0.8rem;cursor:pointer;}
         .task-item:hover{background:#f8fafc;}
-        .toast{position:fixed;bottom:20px;right:20px;background:#10b981;color:white;padding:12px 20px;border-radius:40px;z-index:1000;animation:fadein 0.3s;}
-        .toast.error{background:#ef4444;}
-        @keyframes fadein{from{opacity:0;transform:translateX(100%);}to{opacity:1;transform:translateX(0);}}
+        .toast-message{position:fixed;bottom:20px;right:20px;color:white;padding:12px 20px;border-radius:40px;z-index:1000;}
         .file-upload-label{background:#e2e8f0;padding:0.6rem 1.4rem;border-radius:40px;cursor:pointer;display:inline-flex;align-items:center;gap:8px;}
         .file-upload-label:hover{background:#cbd5e1;}
     </style>
@@ -58,11 +56,15 @@
 </div>
 <div id="taskModal" class="modal"><div class="modal-content"><h3>Выберите задание из базы</h3><div id="tasksListModal"></div><button id="closeTaskModal" class="btn" style="margin-top:1rem;">Закрыть</button></div></div>
 <div id="changeNumberModal" class="modal"><div class="modal-content"><h3>Изменение номера вопроса</h3><p>Введите новый номер вопроса (от 1 до <span id="maxNumber"></span>)</p><input type="number" id="newNumberInput" min="1"><div class="modal-buttons" style="margin-top:1rem;"><button id="cancelNumberBtn" class="btn">Отмена</button><button id="saveNumberBtn" class="btn btn-primary">Переместить</button></div></div></div>
-<div id="answersModal" class="modal"><div class="modal-content"><h3>Ввод ответов для задания</h3><div id="previewHtml" style="background:#f1f5f9;padding:1rem;border-radius:16px;margin-bottom:1rem;max-height:200px;overflow:auto;"></div><div class="answers-editor"><label>Варианты ответов (один или несколько)</label><div id="answersList"></div><button type="button" id="addAnswerRow" class="add-answer" style="background:#eef2ff;border:none;padding:0.3rem 1rem;border-radius:40px;cursor:pointer;margin-top:8px;">+ Добавить вариант</button></div><div class="modal-buttons" style="margin-top:1rem;"><button id="cancelAnswersBtn" class="btn">Отмена</button><button id="saveAnswersBtn" class="btn btn-primary">Сохранить вопрос</button></div></div></div>
 <script>
-    let currentTestId=null, currentTest=null, isEditingTitle=false, movingQuestionId=null, pendingHtmlTitle='', pendingHtmlContent='', tempAnswers=[];
-    function showToast(msg, isError=false){const t=document.createElement('div');t.className='toast'+(isError?' error':'');t.textContent=msg;document.body.appendChild(t);setTimeout(()=>t.remove(),3000);}
-    async function checkAuth() { const res = await fetch('/api/check-session'); const data = await res.json(); if (!data.authenticated) { location.href='index.html'; return false; } return true; }
+    let currentTestId=null, currentTest=null, isEditingTitle=false;
+    let movingQuestionId = null;
+    async function checkAuth() {
+        const res = await fetch('/api/check-session');
+        const data = await res.json();
+        if (!data.authenticated) { window.location.href = 'index.html'; return false; }
+        return true;
+    }
     async function fetchTests(){const r=await fetch('/api/tests');return r.json();}
     async function saveTests(t){await fetch('/api/tests',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(t)});}
     async function loadTestFromUrl(){
@@ -83,11 +85,11 @@
         if(!currentTest)return;
         if(isEditingTitle){
             container.innerHTML=`<div class="title-edit-form"><input type="text" id="editTitleInput" class="title-input" value="${escapeHtml(currentTest.title)}" autofocus><button class="btn btn-success btn-sm" id="saveTitleBtn">Сохранить</button><button class="btn btn-outline btn-sm" id="cancelTitleBtn">Отмена</button></div>`;
-            document.getElementById('saveTitleBtn').onclick=async()=>{const newTitle=document.getElementById('editTitleInput').value.trim();if(!newTitle){showToast("Название не может быть пустым",true);return;}let tests=await fetchTests();const idx=tests.findIndex(t=>t.id===currentTestId);if(idx!==-1){tests[idx].title=newTitle;await saveTests(tests);currentTest=tests[idx];showToast("Название обновлено");isEditingTitle=false;renderTestTitle();}};
-            document.getElementById('cancelTitleBtn').onclick=()=>{isEditingTitle=false;renderTestTitle();};
+            document.getElementById('saveTitleBtn').addEventListener('click',async()=>{const newTitle=document.getElementById('editTitleInput').value.trim();if(!newTitle){showToast("Название не может быть пустым",true);return;}let tests=await fetchTests();const idx=tests.findIndex(t=>t.id===currentTestId);if(idx!==-1){tests[idx].title=newTitle;await saveTests(tests);currentTest=tests[idx];showToast("Название обновлено");isEditingTitle=false;renderTestTitle();}});
+            document.getElementById('cancelTitleBtn').addEventListener('click',()=>{isEditingTitle=false;renderTestTitle();});
         }else{
             container.innerHTML=`<div class="test-title-display"><span class="test-title-text">${escapeHtml(currentTest.title)}</span><button class="edit-title-btn" id="editTitleBtn">Редактировать</button></div>`;
-            document.getElementById('editTitleBtn')?.onclick=()=>{isEditingTitle=true;renderTestTitle();};
+            document.getElementById('editTitleBtn')?.addEventListener('click',()=>{isEditingTitle=true;renderTestTitle();});
         }
     }
     async function renderQuestionsList(){
@@ -95,78 +97,126 @@
         if(!currentTest){container.innerHTML='<div class="empty-questions">Тест не загружен</div>';return;}
         const qs=currentTest.questions||[];
         if(!qs.length){container.innerHTML='<div class="empty-questions">В этом тесте пока нет вопросов.</div>';return;}
-        container.innerHTML=qs.map((q,idx)=>`<div class="question-card" data-qid="${q.id}"><div class="question-preview"><h3>${escapeHtml(q.titleQuestion||"Без заголовка")}</h3><div class="question-meta"><span>Вопрос #${idx+1}</span><span>Баллы: ${q.points||1}</span><span>Правильных ответов: ${(q.correctIndices?.length||q.answers?.filter(a=>a.isCorrect).length||0)}</span><span>${q.requireFileAttachment?'Требует файл':'Без файла'}</span></div></div><div><button class="btn btn-outline btn-sm edit-question" data-qid="${q.id}">Редактировать</button> <button class="btn btn-outline btn-sm change-number-btn" data-qid="${q.id}" data-current="${idx+1}">Номер</button> <button class="btn btn-danger btn-sm delete-question" data-qid="${q.id}">Удалить</button></div></div>`).join('');
-        document.querySelectorAll('.edit-question').forEach(btn=>btn.onclick=()=>{const qid=btn.dataset.qid;location.href=`edit-question.html?testId=${currentTestId}&questionId=${qid}`;});
-        document.querySelectorAll('.delete-question').forEach(btn=>btn.onclick=async()=>{if(confirm('Удалить вопрос?')){let tests=await fetchTests();const idx=tests.findIndex(t=>t.id===currentTestId);if(idx!==-1){tests[idx].questions=tests[idx].questions.filter(q=>q.id!==btn.dataset.qid);await saveTests(tests);currentTest=tests[idx];renderQuestionsList();showToast("Вопрос удалён");}}});
-        document.querySelectorAll('.change-number-btn').forEach(btn=>btn.onclick=(e)=>{e.stopPropagation();movingQuestionId=btn.dataset.qid;document.getElementById('maxNumber').innerText=currentTest.questions.length;document.getElementById('newNumberInput').value=btn.dataset.current;document.getElementById('changeNumberModal').style.display='flex';});
-        new Sortable(container,{animation:150,onEnd:async function(){const newOrder=[];document.querySelectorAll('.question-card').forEach(c=>newOrder.push(c.dataset.qid));let tests=await fetchTests();const idx=tests.findIndex(t=>t.id===currentTestId);if(idx!==-1){tests[idx].questions=newOrder.map(id=>tests[idx].questions.find(q=>q.id===id));await saveTests(tests);currentTest=tests[idx];renderQuestionsList();showToast('Порядок вопросов сохранён');}}});
-    }
-    async function changeQuestionNumber(questionId, newPosition){
-        let tests=await fetchTests();const testIdx=tests.findIndex(t=>t.id===currentTestId);if(testIdx===-1)return;const questions=tests[testIdx].questions;const oldIndex=questions.findIndex(q=>q.id===questionId);if(oldIndex===-1)return;const newIndex=newPosition-1;if(newIndex<0||newIndex>=questions.length)return;if(oldIndex===newIndex)return;const [moved]=questions.splice(oldIndex,1);questions.splice(newIndex,0,moved);await saveTests(tests);currentTest=tests[testIdx];renderQuestionsList();showToast(`Вопрос перемещён на позицию ${newPosition}`);
-    }
-    function showAnswersModal(title, htmlContent){
-        pendingHtmlTitle=title;pendingHtmlContent=htmlContent;
-        document.getElementById('previewHtml').innerHTML=`<strong>Заголовок:</strong> ${escapeHtml(title)}<br><strong>Текст вопроса:</strong><div>${htmlContent}</div>`;
-        tempAnswers=[];renderAnswersUI();document.getElementById('answersModal').style.display='flex';
-    }
-    function renderAnswersUI(){
-        const container=document.getElementById('answersList');
-        if(!tempAnswers.length){container.innerHTML='<div style="padding:1rem;text-align:center;">Нет вариантов ответа. Добавьте первый вариант.</div>';return;}
-        container.innerHTML=tempAnswers.map((a,idx)=>`<div class="answer-row" style="display:flex;align-items:center;gap:10px;margin-bottom:8px;"><input type="checkbox" class="answer-correct" data-idx="${idx}" ${a.isCorrect?'checked':''}><input type="text" class="answer-text" value="${escapeHtml(a.text)}" placeholder="Вариант ответа" data-idx="${idx}" style="flex:1;padding:0.5rem;border:1px solid #cbd5e1;border-radius:20px;"><button class="remove-answer" data-idx="${idx}" style="background:none;border:none;cursor:pointer;font-size:1.2rem;">🗑️</button></div>`).join('');
-        document.querySelectorAll('.answer-correct').forEach(cb=>cb.onchange=e=>{const idx=parseInt(cb.dataset.idx);if(tempAnswers[idx])tempAnswers[idx].isCorrect=cb.checked;});
-        document.querySelectorAll('.answer-text').forEach(inp=>inp.oninput=e=>{const idx=parseInt(inp.dataset.idx);if(tempAnswers[idx])tempAnswers[idx].text=inp.value;});
-        document.querySelectorAll('.remove-answer').forEach(btn=>btn.onclick=e=>{const idx=parseInt(btn.dataset.idx);tempAnswers.splice(idx,1);renderAnswersUI();});
-    }
-    async function saveQuestionWithAnswers(){
-        if(!tempAnswers.length){showToast('Добавьте хотя бы один вариант ответа',true);return;}
-        if(tempAnswers.some(a=>!a.text.trim())){showToast('Все варианты должны содержать текст',true);return;}
-        if(!tempAnswers.some(a=>a.isCorrect)){showToast('Выберите хотя бы один правильный ответ',true);return;}
-        const editorData={blocks:[{type:'paragraph',data:{text:pendingHtmlContent}}]};
-        const newQuestion={id:'q_'+Date.now()+'_'+Math.random().toString(36).substr(2,6),titleQuestion:pendingHtmlTitle,points:1,editorData,answers:tempAnswers.map(a=>({text:a.text,isCorrect:a.isCorrect})),answerOptions:tempAnswers.map(a=>a.text),correctIndices:tempAnswers.reduce((arr,a,idx)=>{if(a.isCorrect)arr.push(idx);return arr},[]),requireFileAttachment:false,hasEditorContent:true};
-        let tests=await fetchTests();const testIdx=tests.findIndex(t=>t.id===currentTestId);if(testIdx!==-1){if(!tests[testIdx].questions)tests[testIdx].questions=[];tests[testIdx].questions.push(newQuestion);await saveTests(tests);currentTest=tests[testIdx];renderQuestionsList();showToast(`Задание "${pendingHtmlTitle}" добавлено`);document.getElementById('answersModal').style.display='none';}
-        else showToast('Тест не найден',true);
-    }
-    async function importQuestionFromHTML(file){
-        return new Promise((resolve, reject)=>{
-            const reader=new FileReader();
-            reader.onload=async function(e){
-                const htmlContent=e.target.result;
-                const parser=new DOMParser();
-                const doc=parser.parseFromString(htmlContent,'text/html');
-                let title=doc.querySelector('title')?.innerText.trim()||doc.querySelector('h1')?.innerText.trim()||'Задание из HTML';
-                const bodyClone=doc.body.cloneNode(true);
-                bodyClone.querySelectorAll('script,style,link').forEach(el=>el.remove());
-                const firstH1=bodyClone.querySelector('h1');
-                if(firstH1 && firstH1.innerText.trim()===title) firstH1.remove();
-                let questionHtml=bodyClone.innerHTML.trim()||'Текст вопроса не указан';
-                showAnswersModal(title,questionHtml);
-                resolve();
-            };
-            reader.onerror=()=>reject(new Error('Ошибка чтения файла'));
-            reader.readAsText(file,'UTF-8');
+        container.innerHTML=qs.map((q,idx)=>`<div class="question-card" data-qid="${q.id}"><div class="question-preview"><h3>${escapeHtml(q.titleQuestion||"Без заголовка")}</h3><div class="question-meta"><span>Вопрос #${idx+1}</span><span>Баллы: ${q.points||1}</span><span>Правильных ответов: ${(q.correctIndices?.length||q.answers?.filter(a=>a.isCorrect).length||0)}</span><span>${q.requireFileAttachment?'📎 Требует файл':'📄 Без файла'}</span>${q.attachments && q.attachments.length ? `<span>📁 Файлов: ${q.attachments.length}</span>` : ''}</div></div><div><button class="btn btn-outline btn-sm edit-question" data-qid="${q.id}">Редактировать</button> <button class="btn btn-outline btn-sm change-number-btn" data-qid="${q.id}" data-current="${idx+1}">Номер</button> <button class="btn btn-danger btn-sm delete-question" data-qid="${q.id}">Удалить</button></div></div>`).join('');
+        document.querySelectorAll('.edit-question').forEach(btn=>btn.addEventListener('click',()=>{const qid=btn.dataset.qid;location.href=`edit-question.html?testId=${currentTestId}&questionId=${qid}`;}));
+        document.querySelectorAll('.delete-question').forEach(btn=>btn.addEventListener('click',async()=>{if(confirm('Удалить вопрос?')){let tests=await fetchTests();const idx=tests.findIndex(t=>t.id===currentTestId);if(idx!==-1){tests[idx].questions=tests[idx].questions.filter(q=>q.id!==btn.dataset.qid);await saveTests(tests);currentTest=tests[idx];renderQuestionsList();showToast("Вопрос удалён");}}}));
+        document.querySelectorAll('.change-number-btn').forEach(btn=>btn.addEventListener('click',(e)=>{
+            e.stopPropagation();
+            movingQuestionId = btn.dataset.qid;
+            document.getElementById('maxNumber').innerText = currentTest.questions.length;
+            document.getElementById('newNumberInput').value = btn.dataset.current;
+            document.getElementById('changeNumberModal').style.display = 'flex';
+        }));
+        new Sortable(container, {
+            animation:150,
+            onEnd:async function(){
+                const newOrder=[];
+                document.querySelectorAll('.question-card').forEach(card=>newOrder.push(card.getAttribute('data-qid')));
+                let tests=await fetchTests();
+                const idx=tests.findIndex(t=>t.id===currentTestId);
+                if(idx!==-1){
+                    const reordered=newOrder.map(id=>tests[idx].questions.find(q=>q.id===id));
+                    tests[idx].questions=reordered;
+                    await saveTests(tests);
+                    currentTest=tests[idx];
+                    renderQuestionsList();
+                    showToast('Порядок вопросов сохранён');
+                }
+            }
         });
     }
+    async function changeQuestionNumber(questionId, newPosition) {
+        let tests = await fetchTests();
+        const testIdx = tests.findIndex(t => t.id === currentTestId);
+        if (testIdx === -1) return;
+        const questions = tests[testIdx].questions;
+        const oldIndex = questions.findIndex(q => q.id === questionId);
+        if (oldIndex === -1) return;
+        const newIndex = newPosition - 1;
+        if (newIndex < 0 || newIndex >= questions.length) return;
+        if (oldIndex === newIndex) return;
+        const [moved] = questions.splice(oldIndex, 1);
+        questions.splice(newIndex, 0, moved);
+        await saveTests(tests);
+        currentTest = tests[testIdx];
+        renderQuestionsList();
+        showToast(`Вопрос перемещён на позицию ${newPosition}`);
+    }
+    function showToast(msg,isError=false){const t=document.createElement('div');t.className='toast-message';t.style.background=isError?'#ef4444':'#10b981';t.textContent=msg;document.body.appendChild(t);setTimeout(()=>t.remove(),3000);}
     function escapeHtml(s){if(!s)return '';return s.replace(/[&<>]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[m]));}
-    document.getElementById('createNewQuestionBtn').onclick=()=>{if(currentTestId)location.href=`edit-question.html?testId=${currentTestId}&mode=new`;};
-    document.getElementById('manageTestBtn').onclick=()=>{if(currentTestId)location.href=`manage-test.html?testId=${currentTestId}`;};
-    document.getElementById('htmlFileInput').onchange=async(e)=>{const file=e.target.files[0];if(!file)return;try{await importQuestionFromHTML(file);}catch(err){showToast(err.message,true);}e.target.value='';};
-    document.getElementById('uploadHtmlBtn').onclick=()=>{document.getElementById('htmlFileInput').click();};
-    document.getElementById('addAnswerRow').onclick=()=>{tempAnswers.push({text:'',isCorrect:false});renderAnswersUI();};
-    document.getElementById('saveAnswersBtn').onclick=saveQuestionWithAnswers;
-    document.getElementById('cancelAnswersBtn').onclick=()=>{document.getElementById('answersModal').style.display='none';tempAnswers=[];};
+    document.getElementById('createNewQuestionBtn').addEventListener('click',()=>{if(currentTestId)location.href=`edit-question.html?testId=${currentTestId}&mode=new`;});
+    document.getElementById('manageTestBtn').addEventListener('click',()=>{if(currentTestId)location.href=`manage-test.html?testId=${currentTestId}`;});
+    document.getElementById('htmlFileInput').addEventListener('change', async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        try {
+            const htmlContent = await file.text();
+            const parser = new DOMParser();
+            const doc = parser.parseFromString(htmlContent, 'text/html');
+            let title = doc.querySelector('title')?.innerText.trim() || doc.querySelector('h1')?.innerText.trim() || 'Задание из HTML';
+            const body = doc.body.cloneNode(true);
+            body.querySelectorAll('script, style, link').forEach(el => el.remove());
+            const questionHtml = body.innerHTML.trim() || 'Текст вопроса не указан';
+            const newQuestion = {
+                id: 'q_' + Date.now() + '_' + Math.random().toString(36).substr(2,6),
+                titleQuestion: title,
+                points: 1,
+                editorData: { blocks: [{ type: 'paragraph', data: { text: questionHtml } }] },
+                answers: [],
+                answerOptions: [],
+                correctIndices: [],
+                requireFileAttachment: false,
+                attachments: [],
+                hasEditorContent: true
+            };
+            let tests = await fetchTests();
+            const testIdx = tests.findIndex(t => t.id === currentTestId);
+            if(testIdx !== -1){
+                if(!tests[testIdx].questions) tests[testIdx].questions = [];
+                tests[testIdx].questions.push(newQuestion);
+                await saveTests(tests);
+                currentTest = tests[testIdx];
+                renderQuestionsList();
+                showToast(`Задание "${title}" добавлено из HTML`);
+            }
+        } catch(err) { showToast(err.message, true); }
+        e.target.value = '';
+    });
     const modal=document.getElementById('taskModal');
-    document.getElementById('addFromBaseBtn').onclick=async()=>{
-        const tasksRes=await fetch('/api/tasks-base');const tasks=await tasksRes.json();const container=document.getElementById('tasksListModal');
+    document.getElementById('addFromBaseBtn').addEventListener('click',async()=>{
+        const tasksRes=await fetch('/api/tasks-base');
+        const tasks=await tasksRes.json();
+        const container=document.getElementById('tasksListModal');
         if(!tasks.length)container.innerHTML='<p>Нет заданий в базе.</p>';
-        else{container.innerHTML=tasks.map((t,idx)=>`<div class="task-item" data-idx="${idx}"><strong>${escapeHtml(t.title)}</strong><br><span style="font-size:0.8rem;">Вариантов: ${t.answerOptions?.length||0} | Баллов: ${t.points||1}</span></div>`).join('');
-        document.querySelectorAll('.task-item').forEach(el=>el.onclick=async()=>{const idx=parseInt(el.dataset.idx);const task=tasks[idx];if(confirm(`Добавить задание "${task.title}" в тест?`)){const newQuestion={id:'q_'+Date.now()+'_'+Math.random().toString(36).substr(2,6),titleQuestion:task.title,points:task.points||1,editorData:task.editorData,answers:task.answers,answerOptions:task.answerOptions,correctIndices:task.correctIndices,requireFileAttachment:task.requireFileAttachment||false,hasEditorContent:true};let tests=await fetchTests();const testIdx=tests.findIndex(t=>t.id===currentTestId);if(testIdx!==-1){if(!tests[testIdx].questions)tests[testIdx].questions=[];tests[testIdx].questions.push(newQuestion);await saveTests(tests);currentTest=tests[testIdx];renderQuestionsList();showToast("Задание добавлено из базы");modal.style.display='none';}}});}
+        else{
+            container.innerHTML=tasks.map((t,idx)=>`<div class="task-item" data-idx="${idx}"><strong>${escapeHtml(t.title)}</strong><br><span style="font-size:0.8rem;">Вариантов: ${t.answerOptions?.length||0} | Баллов: ${t.points||1}</span></div>`).join('');
+            document.querySelectorAll('.task-item').forEach(el=>el.addEventListener('click',async()=>{
+                const idx=parseInt(el.dataset.idx);
+                const task=tasks[idx];
+                if(confirm(`Добавить задание "${task.title}" в тест?`)){
+                    const newQuestion={id:'q_'+Date.now()+'_'+Math.random().toString(36).substr(2,6),titleQuestion:task.title,points:task.points||1,editorData:task.editorData,answers:task.answers,answerOptions:task.answerOptions,correctIndices:task.correctIndices,requireFileAttachment:task.requireFileAttachment||false,attachments:task.attachments||[],hasEditorContent:true};
+                    let tests=await fetchTests();
+                    const testIdx=tests.findIndex(t=>t.id===currentTestId);
+                    if(testIdx!==-1){if(!tests[testIdx].questions)tests[testIdx].questions=[];tests[testIdx].questions.push(newQuestion);await saveTests(tests);currentTest=tests[testIdx];renderQuestionsList();showToast("Задание добавлено из базы");modal.style.display='none';}
+                }
+            }));
+        }
         modal.style.display='flex';
-    };
-    document.getElementById('closeTaskModal').onclick=()=>{modal.style.display='none';};
-    const numberModal=document.getElementById('changeNumberModal');
-    document.getElementById('cancelNumberBtn').onclick=()=>{numberModal.style.display='none';movingQuestionId=null;};
-    document.getElementById('saveNumberBtn').onclick=async()=>{const newPos=parseInt(document.getElementById('newNumberInput').value);if(isNaN(newPos)||newPos<1||newPos>currentTest.questions.length){showToast('Некорректный номер',true);return;}await changeQuestionNumber(movingQuestionId,newPos);numberModal.style.display='none';movingQuestionId=null;};
-    checkAuth().then(ok=>{if(ok)loadTestFromUrl();});
+    });
+    document.getElementById('closeTaskModal').addEventListener('click',()=>{modal.style.display='none';});
+    const numberModal = document.getElementById('changeNumberModal');
+    document.getElementById('cancelNumberBtn').addEventListener('click', () => { numberModal.style.display = 'none'; movingQuestionId = null; });
+    document.getElementById('saveNumberBtn').addEventListener('click', async () => {
+        const newPos = parseInt(document.getElementById('newNumberInput').value);
+        if (isNaN(newPos) || newPos < 1 || newPos > currentTest.questions.length) {
+            showToast('Некорректный номер', true);
+            return;
+        }
+        await changeQuestionNumber(movingQuestionId, newPos);
+        numberModal.style.display = 'none';
+        movingQuestionId = null;
+    });
+    checkAuth().then(ok => { if(ok) loadTestFromUrl(); });
 </script>
 </body>
 </html>
